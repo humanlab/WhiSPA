@@ -3,7 +3,7 @@ import os
 import pandas as pd
 import torch
 import torchaudio
-from transformers import WhisperModel
+from transformers import AutoModel, WhisperModel
 
 
 CACHE_DIR = '/cronus_data/rrao/cache/'
@@ -16,7 +16,7 @@ class WhiSBERTConfig():
         whisper_model_id: Optional[str] = None,
         pooling_mode: str = "cls",
         loss: str = "cos_sim",
-        use_new_encoder_layers: bool = False,
+        use_sbert_layers: bool = False,
         new_encoder_n_layers: int = 12,
         new_encoder_n_heads: int = 12,
         new_encoder_ffn_dim: int = 3072,
@@ -45,7 +45,7 @@ class WhiSBERTConfig():
             self.whisper_model_id = 'openai/whisper-small'
         self.pooling_mode = pooling_mode
         self.loss = loss
-        self.use_new_encoder_layers = use_new_encoder_layers
+        self.use_sbert_layers = use_sbert_layers
         self.new_encoder_n_layers = new_encoder_n_layers
         self.new_encoder_n_heads = new_encoder_n_heads
         self.new_encoder_ffn_dim = new_encoder_ffn_dim
@@ -71,13 +71,18 @@ class WhiSBERTModel(torch.nn.Module):
     def __init__(self, config):
         super().__init__()
         self.config = config
-        self.whisper_model = WhisperModel.from_pretrained(self.config.whisper_model_id, cache_dir=CACHE_DIR).to(self.config.device)
 
-        if self.config.use_new_encoder_layers:
-            self.new_encoder_layers = torch.nn.ModuleList([
-                WhiSBERTEncoderLayer(self.config) 
-                for _ in range(self.config.new_encoder_n_layers)
-            ])
+        self.whisper_model = WhisperModel.from_pretrained(
+            self.config.whisper_model_id,
+            cache_dir=CACHE_DIR
+        ).to(self.config.device)
+
+        self.sbert_model = AutoModel.from_pretrained(
+            'sentence-transformers/all-mpnet-base-v2',
+            cache_dir=CACHE_DIR
+        )
+        self.sbert_encoder = self.sbert_model.encoder.to(self.config.device)
+        self.pooler = self.sbert_model.pooler.to(self.config.device)
 
     def forward(self, audio_inputs, text_input_ids, text_attention_mask):
         embs = self.whisper_model(
@@ -86,12 +91,18 @@ class WhiSBERTModel(torch.nn.Module):
             decoder_attention_mask=text_attention_mask
         ).last_hidden_state
         
-        if self.config.use_new_encoder_layers:
-            for layer in self.new_encoder_layers:
-                embs = layer(embs)
+        if self.config.use_sbert_layers:
+            embs = self.sbert_encoder(
+                embs,
+                attention_mask=self.sbert_model.get_extended_attention_mask(
+                    text_attention_mask,
+                    embs.size()[:-1]
+                ),
+                head_mask=[None] * self.sbert_model.config.num_hidden_layers
+            )[0]
         
         if self.config.pooling_mode == 'cls':
-            if self.config.use_new_encoder_layers:
+            if self.config.use_sbert_layers:
                 embs = embs[:, 0, :]
             else:
                 non_padding_indices = text_attention_mask.cumsum(dim=1) - 1
@@ -101,43 +112,19 @@ class WhiSBERTModel(torch.nn.Module):
             sum_embs = (embs * text_attention_mask.unsqueeze(-1).expand(embs.size())).sum(dim=1)
             non_padding_counts = text_attention_mask.sum(dim=1).unsqueeze(-1).clamp(min=1)
             embs = sum_embs / non_padding_counts
-        return embs
+
+        return self.pooler.activation(self.pooler.dense(embs))
 
 
-# TO-DO: Add attention masks for forward pass of self-attention block
-class WhiSBERTEncoderLayer(torch.nn.Module):
-    def __init__(self, config):
-        super().__init__()
-        self.self_attn = torch.nn.MultiheadAttention(
-            embed_dim = config.emb_dim, 
-            num_heads = config.new_encoder_n_heads,
-            dropout = config.attention_dropout
-        )
-        self.self_attn_layer_norm = torch.nn.LayerNorm(config.emb_dim, eps=config.eps)
-        self.fc1 = torch.nn.Linear(config.emb_dim, config.new_encoder_ffn_dim)
-        self.fc2 = torch.nn.Linear(config.new_encoder_ffn_dim, config.emb_dim)
-        self.activation_fn = torch.nn.GELU() if config.activation_function == 'gelu' else torch.nn.ReLU()
-        self.final_layer_norm = torch.nn.LayerNorm(config.emb_dim, eps=config.eps)
-        self.dropout = torch.nn.Dropout(config.dropout)
+def mean_pooling(embeddings, attention_mask):
+    input_mask_expanded = attention_mask.unsqueeze(-1).expand(embeddings.size()).float()
+    return torch.sum(embeddings * input_mask_expanded, 1) / torch.clamp(input_mask_expanded.sum(1), min=1e-9)
 
-    def forward(self, hidden_states):
-        # Self-attention block
-        attn_output, _ = self.self_attn(hidden_states, hidden_states, hidden_states)
-        hidden_states = hidden_states + self.dropout(attn_output)
-        hidden_states = self.self_attn_layer_norm(hidden_states)
-
-        # Feed-forward block
-        ffn_output = self.fc2(self.activation_fn(self.fc1(hidden_states)))
-        hidden_states = hidden_states + self.dropout(ffn_output)
-        hidden_states = self.final_layer_norm(hidden_states)
-
-        return hidden_states
-    
 
 class AudioDataset(torch.utils.data.Dataset):
-    def __init__(self, df_path, whisper_processor):
+    def __init__(self, df_path, processor):
         self.df = pd.read_csv(df_path)
-        self.processor = whisper_processor
+        self.processor = processor
 
     def __len__(self):
         return len(self.df)
