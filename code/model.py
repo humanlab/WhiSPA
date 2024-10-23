@@ -2,6 +2,7 @@ import torch
 from transformers import AutoModel, WhisperModel
 
 from config import CACHE_DIR
+from utils import last_pooling, mean_pooling
 
 
 class WhiSBERTModel(torch.nn.Module):
@@ -39,19 +40,8 @@ class WhiSBERTModel(torch.nn.Module):
             )[0]
         
         if self.config.pooling_mode == 'cls':
-            if self.config.use_sbert_layers:
-                embs = embs[:, 0, :]
-            else:
-                # Use last non-padding token if not using SBERT layers
-                non_padding_indices = text_attention_mask.cumsum(dim=1) - 1
-                last_non_padding_indices = non_padding_indices.gather(1, (text_attention_mask.sum(dim=1, keepdim=True) - 1).clamp(min=0).long())
-                embs = embs[torch.arange(text_attention_mask.size(0)).unsqueeze(1), last_non_padding_indices].squeeze()
+            embs = last_pooling(embs, text_attention_mask)
         else:
             embs = mean_pooling(embs, text_attention_mask)
 
         return self.pooler.activation(self.pooler.dense(embs))
-
-
-def mean_pooling(embeddings, attention_mask):
-    input_mask_expanded = attention_mask.unsqueeze(-1).expand(embeddings.size()).float()
-    return torch.sum(embeddings * input_mask_expanded, 1) / torch.clamp(input_mask_expanded.sum(1), min=1e-9)

@@ -12,8 +12,9 @@ from tqdm import tqdm
 from pprint import pprint
 
 from config import WhiSBERTConfig, CACHE_DIR, CHECKPOINT_DIR
-from model import WhiSBERTModel, mean_pooling
+from model import WhiSBERTModel
 from data import AudioDataset, collate
+from utils import mean_pooling, cos_sim, sim_clr
 
 
 THIS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)))
@@ -21,14 +22,14 @@ THIS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)))
 
 """
 python train.py \
---num_epochs 50 \
+--pooling_mode cls \
+--loss cos_sim \
+--num_epochs 10 \
 --batch_size 200 \
 --num_workers 12 \
 --lr 5e-5 \
 --wd 0.01 \
---save_name test \
---whisper_model_id openai/whisper-small \
---pooling_mode cls
+--save_name test 
 """
 
 
@@ -110,6 +111,10 @@ def load_args():
     parser.add_argument(
         '--loss',
         default='cos_sim',
+        choices=[
+            'cos_sim',
+            'sim-clr'
+        ],
         type=str,
         help='Specify the type of loss criteria during training'
     )
@@ -258,6 +263,11 @@ def train(
         verbose=True
     )
 
+    if config.loss == 'cos_sim':
+        loss_func = cos_sim
+    elif config.loss == 'sim_clr':
+        loss_func = sim_clr
+
     if save_name:
         save_dir = os.path.join(CHECKPOINT_DIR, save_name)
         os.makedirs(save_dir, exist_ok=True)
@@ -304,19 +314,9 @@ def train(
                     outputs['attention_mask']
                 )
 
-                # Normalize embeddings to unit vectors for cosine similarity
-                z_audio = F.normalize(whis_embs, p=2, dim=1)
-                z_text = F.normalize(sbert_embs, p=2, dim=1)
-
-                # Calculate contrastive loss
-                similarity_matrix = torch.matmul(z_audio, z_text.T)
-                positive_mask = torch.eye(whis_embs.shape[0], dtype=torch.float32).to(config.device)
-                positive_loss = (positive_mask * similarity_matrix).sum()
-                negative_loss = ((1 - positive_mask) * F.relu(1.0 - similarity_matrix)).sum()
-                
-                contrastive_loss = positive_loss + negative_loss
+                # Apply loss function
+                contrastive_loss = loss_func(whis_embs, sbert_embs)
                 epoch_train_loss += contrastive_loss.item()
-                # print(contrastive_loss)
 
             # Scale the loss and perform backward pass
             scaler.scale(contrastive_loss).backward()
@@ -364,18 +364,9 @@ def train(
                         outputs['attention_mask']
                     )
 
-                    # Normalize embeddings to unit vectors for cosine similarity
-                    z_audio = F.normalize(whis_embs, p=2, dim=1)
-                    z_text = F.normalize(sbert_embs, p=2, dim=1)
-
-                    # Calculate contrastive loss
-                    similarity_matrix = torch.matmul(z_audio, z_text.T)
-                    positive_mask = torch.eye(whis_embs.shape[0], dtype=torch.float32).to(config.device)
-                    positive_loss = (positive_mask * similarity_matrix).sum()
-                    negative_loss = ((1 - positive_mask) * F.relu(1.0 - similarity_matrix)).sum()
-                    contrastive_loss = positive_loss + negative_loss
-                    epoch_val_loss += contrastive_loss.item()
-                    # print(contrastive_loss)
+                    # Apply loss function
+                    contrastive_loss = loss_func(whis_embs, sbert_embs)
+                    epoch_train_loss += contrastive_loss.item()
 
         # Adjust the learning rate based on validation loss
         scheduler.step(epoch_val_loss)
