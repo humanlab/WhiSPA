@@ -1,6 +1,5 @@
 import os
 import argparse
-import pandas as pd
 import torch
 import torch.nn.functional as F
 from transformers import (
@@ -12,13 +11,12 @@ from collections import OrderedDict
 from tqdm import tqdm
 from pprint import pprint
 
-from utils import (
-    WhiSBERTConfig,
-    WhiSBERTModel,
-    mean_pooling,
-    AudioDataset,
-    collate
-)
+from config import WhiSBERTConfig, CACHE_DIR, CHECKPOINT_DIR
+from model import WhiSBERTModel, mean_pooling
+from data import AudioDataset, collate
+
+
+THIS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)))
 
 
 """
@@ -28,14 +26,10 @@ python train.py \
 --num_workers 12 \
 --lr 5e-5 \
 --wd 0.01 \
---save_name tbd \
+--save_name test \
 --whisper_model_id openai/whisper-small \
 --pooling_mode cls
 """
-
-
-CACHE_DIR = '/cronus_data/rrao/cache/'
-CHECKPOINT_DIR = '/cronus_data/rrao/WhiSBERT/models/'
 
 
 def load_args():
@@ -278,17 +272,17 @@ def train(
         epoch_train_loss = 0.0
 
         for batch in tqdm(train_loader, desc=f"Epoch {epoch + 1}/{config.num_epochs} - Training"):
+            # SBERT-based tokenization
+            sbert_inputs = tokenizer(
+                batch['text'],
+                padding=True,
+                truncation=True,
+                return_tensors='pt'
+            ).to(config.device)
+            
             # Forward pass
             with torch.amp.autocast(config.device):
-                # SBERT-based tokenization
-                sbert_inputs = tokenizer(
-                    batch['text'],
-                    padding=True,
-                    truncation=True,
-                    return_tensors='pt'
-                ).to(config.device)
-
-                # Get SBERT's CLS token
+                # Get SBERT's CLS/MEAN token
                 with torch.no_grad():
                     sbert_embs = sbert(**sbert_inputs).last_hidden_state
                 sbert_embs = mean_pooling(sbert_embs, sbert_inputs['attention_mask'])
@@ -340,17 +334,17 @@ def train(
 
         with torch.no_grad():
             for batch in tqdm(val_loader, desc=f"Epoch {epoch + 1}/{config.num_epochs} - Validation"):
+                # SBERT-based tokenization
+                sbert_inputs = tokenizer(
+                    batch['text'],
+                    padding=True,
+                    truncation=True,
+                    return_tensors='pt'
+                ).to(config.device)
+                
                 # Forward pass
                 with torch.amp.autocast(config.device):
-                    # SBERT-based tokenization
-                    sbert_inputs = tokenizer(
-                        batch['text'],
-                        padding=True,
-                        truncation=True,
-                        return_tensors='pt'
-                    ).to(config.device)
-
-                    # Get SBERT's CLS token
+                    # Get SBERT's CLS/MEAN token
                     sbert_embs = sbert(**sbert_inputs).last_hidden_state
                     sbert_embs = mean_pooling(sbert_embs, sbert_inputs['attention_mask'])
 
@@ -443,7 +437,7 @@ def main():
     processor, whisbert, tokenizer, sbert = load_models(config, args.load_path)
 
     print('\nPreprocessing AudioDataset...')
-    dataset = AudioDataset('/cronus_data/rrao/wtc_clinic/whisper_segments_transripts.csv', processor)
+    dataset = AudioDataset(processor)
 
     # Calculate lengths for the train/val split (80:20)
     total_size = len(dataset)
