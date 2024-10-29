@@ -6,7 +6,7 @@ class WhiSBERTConfig():
     def __init__(
         self,
         whisper_model_id: str = 'openai/whisper-small',
-        pooling_mode: str = 'cls',
+        pooling_mode: str = 'last',
         loss: str = 'cos_sim',
         use_sbert_layers: bool = False,
         new_encoder_n_layers: int = 12,

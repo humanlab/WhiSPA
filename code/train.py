@@ -9,20 +9,26 @@ from transformers import (
 )
 from collections import OrderedDict
 from tqdm import tqdm
+from matplotlib import pyplot as plt
 from pprint import pprint
 
 from config import WhiSBERTConfig, CACHE_DIR, CHECKPOINT_DIR
 from model import WhiSBERTModel
 from data import AudioDataset, collate
-from utils import mean_pooling, cos_sim, sim_clr
+from utils import (
+    mean_pooling,
+    cos_sim_loss,
+    clr_cos_loss,
+    simclr_loss
+)
 
 
-THIS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)))
+BASE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
 
 
 """
-python train.py \
---pooling_mode cls \
+python code/train.py \
+--pooling_mode last \
 --loss cos_sim \
 --num_epochs 10 \
 --batch_size 200 \
@@ -100,9 +106,9 @@ def load_args():
     )
     parser.add_argument(
         '--pooling_mode',
-        default='cls',
+        default='last',
         choices=[
-            'cls',
+            'last',
             'mean'
         ],
         type=str,
@@ -113,7 +119,10 @@ def load_args():
         default='cos_sim',
         choices=[
             'cos_sim',
-            'sim-clr'
+            'dot_sim',
+            'clr_cos',
+            'simclr_cos',
+            'simclr_dot'
         ],
         type=str,
         help='Specify the type of loss criteria during training'
@@ -264,9 +273,15 @@ def train(
     )
 
     if config.loss == 'cos_sim':
-        loss_func = cos_sim
-    elif config.loss == 'sim_clr':
-        loss_func = sim_clr
+        loss_func = cos_sim_loss
+    # elif config.loss == 'dot_sim':
+    #     loss_func = dot_sim
+    elif config.loss == 'clr_cos':
+        loss_func = clr_cos_loss
+    elif config.loss == 'simclr_cos':
+        loss_func = simclr_loss
+    elif config.loss == 'simclr_dot':
+        loss_func = simclr_loss
 
     if save_name:
         save_dir = os.path.join(CHECKPOINT_DIR, save_name)
@@ -292,7 +307,7 @@ def train(
             
             # Forward pass
             with torch.amp.autocast(config.device):
-                # Get SBERT's CLS/MEAN token
+                # Get SBERT's embedding
                 with torch.no_grad():
                     sbert_embs = sbert(**sbert_inputs).last_hidden_state
                 sbert_embs = mean_pooling(sbert_embs, sbert_inputs['attention_mask'])
@@ -307,7 +322,7 @@ def train(
                         return_tensors='pt'
                     ).to(config.device)
 
-                # Get WhiSBERT's CLS/MEAN token
+                # Get WhiSBERT's LAST/MEAN token
                 whis_embs = whisbert(
                     batch['audio_inputs'].to(config.device),
                     outputs['input_ids'],
@@ -344,7 +359,7 @@ def train(
                 
                 # Forward pass
                 with torch.amp.autocast(config.device):
-                    # Get SBERT's CLS/MEAN token
+                    # Get SBERT's embedding
                     sbert_embs = sbert(**sbert_inputs).last_hidden_state
                     sbert_embs = mean_pooling(sbert_embs, sbert_inputs['attention_mask'])
 
@@ -357,7 +372,7 @@ def train(
                         return_tensors='pt'
                     ).to(config.device)
 
-                    # Get WhiSBERT's CLS/MEAN token
+                    # Get WhiSBERT's LAST/MEAN token
                     whis_embs = whisbert(
                         batch['audio_inputs'].to(config.device),
                         outputs['input_ids'],
@@ -388,6 +403,18 @@ def train(
 
         train_loss.append(avg_train_loss)
         val_loss.append(avg_val_loss)
+
+        # Plot and save loss curves
+        plt.figure(figsize=(10, 6))
+        plt.plot(range(1, len(train_loss) + 1), train_loss, 'b-', label='Training Loss')
+        plt.plot(range(1, len(val_loss) + 1), val_loss, 'r-', label='Validation Loss')
+        plt.title(f'Training vs Validation Loss Curve')
+        plt.xlabel('Epochs')
+        plt.ylabel('Loss')
+        plt.legend()
+        plt.grid(True)
+        os.makedirs(os.path.join(BASE_DIR, 'loss'), exist_ok=True)
+        plt.savefig(os.path.join(BASE_DIR, f'loss/{save_name}.png'), format='png')
 
         print(f"Epoch {epoch + 1}/{config.num_epochs}")
         print(f"\tTraining Loss: {avg_train_loss:.4f}")

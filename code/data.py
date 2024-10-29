@@ -10,7 +10,7 @@ WTC_AUDIO_DIR = '/cronus_data/wtc_clinic/Clinic_Audio_Segments/'
 class AudioDataset(torch.utils.data.Dataset):
     
     def __init__(self, processor):
-        self.hitop_segments_messages = pd.read_csv('/cronus_data/rrao/hitop/segments_messages.csv')
+        self.hitop_segments_messages = pd.read_csv('/cronus_data/rrao/hitop/segments_messages_cleaned.csv')
         self.wtc_segments_messages = pd.read_csv('/cronus_data/rrao/wtc_clinic/segments_messages.csv')
         self.processor = processor
 
@@ -20,9 +20,10 @@ class AudioDataset(torch.utils.data.Dataset):
     def __getitem__(self, idx):
         audio_dir = HITOP_AUDIO_DIR if idx < len(self.hitop_segments_messages) else WTC_AUDIO_DIR
         i = idx if idx < len(self.hitop_segments_messages) else idx - len(self.hitop_segments_messages)
+        df = self.hitop_segments_messages if idx < len(self.hitop_segments_messages) else self.wtc_segments_messages
         
-        audio_path = os.path.join(audio_dir, self.df.iloc[i]['segment_filename'])
-        return preprocess_audio(self.processor, audio_path), self.df.iloc[i]['segment_message']
+        audio_path = os.path.join(audio_dir, df.iloc[i]['segment_filename'])
+        return preprocess_audio(self.processor, audio_path), df.iloc[i]['segment_message']
 
 
 def preprocess_audio(processor, audio_path):

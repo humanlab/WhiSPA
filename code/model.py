@@ -39,7 +39,7 @@ class WhiSBERTModel(torch.nn.Module):
                 head_mask=[None] * self.sbert_model.config.num_hidden_layers
             )[0]
         
-        if self.config.pooling_mode == 'cls':
+        if self.config.pooling_mode == 'last':
             embs = last_pooling(embs, text_attention_mask)
         else:
             embs = mean_pooling(embs, text_attention_mask)
