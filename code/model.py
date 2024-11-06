@@ -29,7 +29,7 @@ class WhiSBERTModel(torch.nn.Module):
             decoder_attention_mask=text_attention_mask
         ).last_hidden_state
         
-        if self.config.use_sbert_layers:
+        if self.config.user_sbert_encoder:
             embs = self.sbert_encoder(
                 embs,
                 attention_mask=self.sbert_model.get_extended_attention_mask(

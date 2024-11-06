@@ -8,7 +8,7 @@ class WhiSBERTConfig():
         whisper_model_id: str = 'openai/whisper-small',
         pooling_mode: str = 'last',
         loss: str = 'cos_sim',
-        use_sbert_layers: bool = False,
+        user_sbert_encoder: bool = False,
         new_encoder_n_layers: int = 12,
         new_encoder_n_heads: int = 12,
         new_encoder_ffn_dim: int = 3072,
@@ -37,7 +37,7 @@ class WhiSBERTConfig():
             self.whisper_model_id = 'openai/whisper-small'
         self.pooling_mode = pooling_mode
         self.loss = loss
-        self.use_sbert_layers = use_sbert_layers
+        self.user_sbert_encoder = user_sbert_encoder
         self.new_encoder_n_layers = new_encoder_n_layers
         self.new_encoder_n_heads = new_encoder_n_heads
         self.new_encoder_ffn_dim = new_encoder_ffn_dim

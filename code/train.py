@@ -27,15 +27,17 @@ BASE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
 
 
 """
+CUDA_VISIBLE_DEVICES=0,1,2,3 \
 python code/train.py \
 --pooling_mode last \
 --loss cos_sim \
 --num_epochs 10 \
---batch_size 200 \
+--batch_size 215 \
 --num_workers 12 \
 --lr 5e-5 \
---wd 0.01 \
---save_name test 
+--wd 1e-2 \
+--save_name whisper_last_cos-sim_10_5e-5_1e-2 \
+> logs/whisper_last_cos-sim_10_5e-5_1e-2.txt
 """
 
 
@@ -128,7 +130,7 @@ def load_args():
         help='Specify the type of loss criteria during training'
     )
     parser.add_argument(
-        '--use_sbert_layers',
+        '--user_sbert_encoder',
         action='store_true',
         help='Specify whether to use the additional encoder layers for WhiSBERT'
     )
@@ -430,7 +432,7 @@ def main():
         whisper_model_id = args.whisper_model_id,
         pooling_mode = args.pooling_mode,
         loss = args.loss,
-        use_sbert_layers = args.use_sbert_layers,
+        user_sbert_encoder = args.user_sbert_encoder,
         new_encoder_n_layers = args.new_encoder_n_layers,
         new_encoder_n_heads = args.new_encoder_n_heads,
         new_encoder_ffn_dim = args.new_encoder_ffn_dim,
