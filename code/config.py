@@ -5,10 +5,10 @@ CHECKPOINT_DIR = '/cronus_data/rrao/WhiSBERT/models/'
 class WhiSBERTConfig():
     def __init__(
         self,
-        whisper_model_id: str = 'openai/whisper-small',
-        pooling_mode: str = 'last',
+        whisper_model_id: str = 'openai/whisper-tiny',
+        pooling_mode: str = 'mean',
         loss: str = 'cos_sim',
-        user_sbert_encoder: bool = False,
+        use_sbert_encoder: bool = False,
         new_encoder_n_layers: int = 12,
         new_encoder_n_heads: int = 12,
         new_encoder_ffn_dim: int = 3072,
@@ -28,16 +28,31 @@ class WhiSBERTConfig():
         device: str = 'cpu',
         **kwargs,
     ):
-        # Model hyperparameters
+        whisper_model_id_choices = [
+            'openai/whisper-tiny',
+            'openai/whisper-base',
+            'openai/whisper-small'
+        ]
+        sbert_model_id_choices = [
+            'sentence-transformers/all-MiniLM-L12-v2',
+            'sentence-transformers/distiluse-base-multilingual-cased-v1',
+            'sentence-transformers/all-mpnet-base-v2'
+        ]
+        emb_dim_choices = [384, 512, 768]
+
         try:
-            self.emb_dim = (768, 1024)[['openai/whisper-small', 'openai/whisper-medium'].index(whisper_model_id)]
+            self.emb_dim = emb_dim_choices[whisper_model_id_choices.index(whisper_model_id)]
+            self.sbert_model_id = sbert_model_id_choices[whisper_model_id_choices.index(whisper_model_id)]
             self.whisper_model_id = whisper_model_id
         except ValueError:
-            self.emb_dim = 768
-            self.whisper_model_id = 'openai/whisper-small'
+            self.emb_dim = emb_dim_choices[0]
+            self.sbert_model_id = sbert_model_id_choices[0]
+            self.whisper_model_id = whisper_model_id_choices[0]
+                
+        # Model hyperparameters
         self.pooling_mode = pooling_mode
         self.loss = loss
-        self.user_sbert_encoder = user_sbert_encoder
+        self.use_sbert_encoder = use_sbert_encoder
         self.new_encoder_n_layers = new_encoder_n_layers
         self.new_encoder_n_heads = new_encoder_n_heads
         self.new_encoder_ffn_dim = new_encoder_ffn_dim
@@ -57,3 +72,7 @@ class WhiSBERTConfig():
         self.learning_rate = learning_rate
         self.weight_decay = weight_decay
         self.device = device
+
+    def __str__(self):
+        from pprint import pformat
+        return pformat(self.__dict__)

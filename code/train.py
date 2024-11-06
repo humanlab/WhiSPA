@@ -7,6 +7,7 @@ from transformers import (
     AutoModel,
     WhisperProcessor
 )
+from sentence_transformers import SentenceTransformer
 from collections import OrderedDict
 from tqdm import tqdm
 from matplotlib import pyplot as plt
@@ -29,15 +30,16 @@ BASE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
 """
 CUDA_VISIBLE_DEVICES=0,1,2,3 \
 python code/train.py \
---pooling_mode last \
---loss cos_sim \
+--whisper_model_id openai/whisper-tiny \
+--pooling_mode mean \
+--loss clr_cos \
 --num_epochs 10 \
---batch_size 215 \
+--batch_size 128 \
 --num_workers 12 \
 --lr 5e-5 \
 --wd 1e-2 \
---save_name whisper_last_cos-sim_10_5e-5_1e-2 \
-> logs/whisper_last_cos-sim_10_5e-5_1e-2.txt
+--save_name whisper_mean_cos-sim_10_5e-5_1e-2 \
+> logs/whisper_mean_cos-sim_10_5e-5_1e-2.txt
 """
 
 
@@ -102,16 +104,21 @@ def load_args():
     # Hyperparams
     parser.add_argument(
         '--whisper_model_id',
-        default='openai/whisper-small',
+        default='openai/whisper-tiny',
+        choices=[
+            'openai/whisper-tiny',
+            'openai/whisper-base',
+            'openai/whisper-small'
+        ],
         type=str,
         help='Specify the model_id of the Whisper variant on HuggingFace repository'
     )
     parser.add_argument(
         '--pooling_mode',
-        default='last',
+        default='mean',
         choices=[
-            'last',
-            'mean'
+            'mean',
+            'last'
         ],
         type=str,
         help='Specify the pooling mode to select the embedding from WhiSBERT'
@@ -130,7 +137,7 @@ def load_args():
         help='Specify the type of loss criteria during training'
     )
     parser.add_argument(
-        '--user_sbert_encoder',
+        '--use_sbert_encoder',
         action='store_true',
         help='Specify whether to use the additional encoder layers for WhiSBERT'
     )
@@ -206,10 +213,13 @@ def load_models(config, load_path):
     )
     whisbert = WhiSBERTModel(config).to(config.device)
 
-    # Load the pre-trained SentenceTransformer tokenizer and model
-    sbert_model_id = 'sentence-transformers/all-mpnet-base-v2'
-    tokenizer = AutoTokenizer.from_pretrained(sbert_model_id, cache_dir=CACHE_DIR)
-    sbert = AutoModel.from_pretrained(sbert_model_id, cache_dir=CACHE_DIR).to(config.device)
+    # Load the pre-trained SentenceTransformer models
+    if config.sbert_model_id == 'sentence-transformers/distiluse-base-multilingual-cased-v1':
+        tokenizer = None
+        sbert = SentenceTransformer(config.sbert_model_id, cache_folder=CACHE_DIR, device=config.device)
+    else:
+        tokenizer = AutoTokenizer.from_pretrained(config.sbert_model_id, cache_dir=CACHE_DIR)
+        sbert = AutoModel.from_pretrained(config.sbert_model_id, cache_dir=CACHE_DIR).to(config.device)
 
     if config.device == 'cuda':
         if torch.cuda.is_available():
@@ -299,20 +309,29 @@ def train(
         epoch_train_loss = 0.0
 
         for batch in tqdm(train_loader, desc=f"Epoch {epoch + 1}/{config.num_epochs} - Training"):
-            # SBERT-based tokenization
-            sbert_inputs = tokenizer(
-                batch['text'],
-                padding=True,
-                truncation=True,
-                return_tensors='pt'
-            ).to(config.device)
+
+            if config.sbert_model_id != 'sentence-transformers/distiluse-base-multilingual-cased-v1':
+                # SBERT-based tokenization
+                sbert_inputs = tokenizer(
+                    batch['text'],
+                    padding=True,
+                    truncation=True,
+                    return_tensors='pt'
+                ).to(config.device)
             
             # Forward pass
             with torch.amp.autocast(config.device):
+
                 # Get SBERT's embedding
-                with torch.no_grad():
-                    sbert_embs = sbert(**sbert_inputs).last_hidden_state
-                sbert_embs = mean_pooling(sbert_embs, sbert_inputs['attention_mask'])
+                if config.sbert_model_id != 'sentence-transformers/distiluse-base-multilingual-cased-v1':
+                    with torch.no_grad():
+                        sbert_embs = sbert(**sbert_inputs).last_hidden_state
+                    sbert_embs = mean_pooling(sbert_embs, sbert_inputs['attention_mask'])
+                else:
+                    if isinstance(sbert, torch.nn.DataParallel):
+                        sbert_embs = torch.from_numpy(sbert.module.encode(batch['text']))
+                    else:
+                        sbert_embs = torch.from_numpy(sbert.encode(batch['text']))
 
                 # Whisper-based tokenization
                 with torch.no_grad():
@@ -324,7 +343,7 @@ def train(
                         return_tensors='pt'
                     ).to(config.device)
 
-                # Get WhiSBERT's LAST/MEAN token
+                # Get WhiSBERT's MEAN/LAST token
                 whis_embs = whisbert(
                     batch['audio_inputs'].to(config.device),
                     outputs['input_ids'],
@@ -351,19 +370,28 @@ def train(
 
         with torch.no_grad():
             for batch in tqdm(val_loader, desc=f"Epoch {epoch + 1}/{config.num_epochs} - Validation"):
-                # SBERT-based tokenization
-                sbert_inputs = tokenizer(
-                    batch['text'],
-                    padding=True,
-                    truncation=True,
-                    return_tensors='pt'
-                ).to(config.device)
+                
+                if config.sbert_model_id != 'sentence-transformers/distiluse-base-multilingual-cased-v1':
+                    # SBERT-based tokenization
+                    sbert_inputs = tokenizer(
+                        batch['text'],
+                        padding=True,
+                        truncation=True,
+                        return_tensors='pt'
+                    ).to(config.device)
                 
                 # Forward pass
                 with torch.amp.autocast(config.device):
+
                     # Get SBERT's embedding
-                    sbert_embs = sbert(**sbert_inputs).last_hidden_state
-                    sbert_embs = mean_pooling(sbert_embs, sbert_inputs['attention_mask'])
+                    if config.sbert_model_id != 'sentence-transformers/distiluse-base-multilingual-cased-v1':
+                        sbert_embs = sbert(**sbert_inputs).last_hidden_state
+                        sbert_embs = mean_pooling(sbert_embs, sbert_inputs['attention_mask'])
+                    else:
+                        if isinstance(sbert, torch.nn.DataParallel):
+                            sbert_embs = torch.from_numpy(sbert.module.encode(batch['text']))
+                        else:
+                            sbert_embs = torch.from_numpy(sbert.encode(batch['text']))
 
                     # Whisper-based tokenization
                     outputs = processor.tokenizer(
@@ -374,7 +402,7 @@ def train(
                         return_tensors='pt'
                     ).to(config.device)
 
-                    # Get WhiSBERT's LAST/MEAN token
+                    # Get WhiSBERT's MEAN/LAST token
                     whis_embs = whisbert(
                         batch['audio_inputs'].to(config.device),
                         outputs['input_ids'],
@@ -432,7 +460,7 @@ def main():
         whisper_model_id = args.whisper_model_id,
         pooling_mode = args.pooling_mode,
         loss = args.loss,
-        user_sbert_encoder = args.user_sbert_encoder,
+        use_sbert_encoder = args.use_sbert_encoder,
         new_encoder_n_layers = args.new_encoder_n_layers,
         new_encoder_n_heads = args.new_encoder_n_heads,
         new_encoder_ffn_dim = args.new_encoder_ffn_dim,
@@ -451,7 +479,7 @@ def main():
         weight_decay = args.weight_decay,
         device = args.device
     )
-    pprint(config.__dict__)
+    print(config)
 
     print('\nLoading and Initializing Models with Config...')
     processor, whisbert, tokenizer, sbert = load_models(config, args.load_path)

@@ -2,15 +2,15 @@ import torch
 import torch.nn.functional as F
 
 
+def mean_pooling(embeddings, attention_mask):
+    input_mask_expanded = attention_mask.unsqueeze(-1).expand(embeddings.size()).float()
+    return torch.sum(embeddings * input_mask_expanded, 1) / torch.clamp(input_mask_expanded.sum(1), min=1e-9)
+
+
 def last_pooling(embeddings, attention_mask):
     non_padding_indices = attention_mask.cumsum(dim=1) - 1
     last_non_padding_indices = non_padding_indices.gather(1, (attention_mask.sum(dim=1, keepdim=True) - 1).clamp(min=0).long())
     return embeddings[torch.arange(attention_mask.size(0)).unsqueeze(1), last_non_padding_indices].squeeze()
-
-
-def mean_pooling(embeddings, attention_mask):
-    input_mask_expanded = attention_mask.unsqueeze(-1).expand(embeddings.size()).float()
-    return torch.sum(embeddings * input_mask_expanded, 1) / torch.clamp(input_mask_expanded.sum(1), min=1e-9)
 
 
 # Cosine Similarity
