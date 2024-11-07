@@ -27,22 +27,6 @@ from utils import (
 BASE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
 
 
-"""
-CUDA_VISIBLE_DEVICES=0,1,2,3 \
-python code/train.py \
---whisper_model_id openai/whisper-tiny \
---pooling_mode mean \
---loss clr_cos \
---num_epochs 10 \
---batch_size 128 \
---num_workers 12 \
---lr 5e-5 \
---wd 1e-2 \
---save_name whisper_mean_cos-sim_10_5e-5_1e-2 \
-> logs/whisper_mean_cos-sim_10_5e-5_1e-2.txt
-"""
-
-
 def load_args():
     parser = argparse.ArgumentParser(description='Script to train WhiSBERT model')
     # Training params
@@ -411,7 +395,7 @@ def train(
 
                     # Apply loss function
                     contrastive_loss = loss_func(whis_embs, sbert_embs)
-                    epoch_train_loss += contrastive_loss.item()
+                    epoch_val_loss += contrastive_loss.item()
 
         # Adjust the learning rate based on validation loss
         scheduler.step(epoch_val_loss)
