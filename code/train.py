@@ -481,6 +481,10 @@ def main():
     print(f'\tTraining dataset size (N): {train_size}')
     print(f'\tValidation dataset size (N): {val_size}')
 
+    if args.save_name:
+        print(f'WARNING: Overwriting existing model directory!')
+        print(f'\t"{args.save_name}" already exists in "{CHECKPOINT_DIR}"')
+
     print('\nStarting Training...')
     train(
         train_dataset,
