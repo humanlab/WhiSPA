@@ -20,10 +20,11 @@ from utils import (
     mean_pooling,
     cos_sim_loss,
     clr_cos_loss,
-    simclr_loss
+    sim_clr_loss
 )
 
 
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
 BASE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
 
 
@@ -112,10 +113,8 @@ def load_args():
         default='cos_sim',
         choices=[
             'cos_sim',
-            'dot_sim',
             'clr_cos',
-            'simclr_cos',
-            'simclr_dot'
+            'sim_clr',
         ],
         type=str,
         help='Specify the type of loss criteria during training'
@@ -270,14 +269,10 @@ def train(
 
     if config.loss == 'cos_sim':
         loss_func = cos_sim_loss
-    # elif config.loss == 'dot_sim':
-    #     loss_func = dot_sim
     elif config.loss == 'clr_cos':
         loss_func = clr_cos_loss
-    elif config.loss == 'simclr_cos':
-        loss_func = simclr_loss
-    elif config.loss == 'simclr_dot':
-        loss_func = simclr_loss
+    elif config.loss == 'sim_clr':
+        loss_func = sim_clr_loss
 
     if save_name:
         save_dir = os.path.join(CHECKPOINT_DIR, save_name)

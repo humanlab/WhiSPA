@@ -10,10 +10,8 @@ WTC_AUDIO_DIR = '/cronus_data/wtc_clinic/Clinic_Audio_Segments/'
 class AudioDataset(torch.utils.data.Dataset):
     
     def __init__(self, processor):
-        self.hitop_segments_messages = pd.read_csv('/cronus_data/rrao/hitop/segment_table.csv')
-        self.hitop_segments_messages = self.hitop_segments_messages.dropna().reset_index(drop=True)
-        self.wtc_segments_messages = pd.read_csv('/cronus_data/rrao/wtc_clinic/segment_table.csv')
-        self.wtc_segments_messages = self.wtc_segments_messages.dropna().reset_index(drop=True)
+        self.hitop_segments_messages = pd.read_csv('/cronus_data/rrao/hitop/segment_outcomes.csv')
+        self.wtc_segments_messages = pd.read_csv('/cronus_data/rrao/wtc_clinic/segment_outcomes.csv')
         self.processor = processor
 
     def __len__(self):
