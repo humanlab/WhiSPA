@@ -19,8 +19,8 @@ from data import AudioDataset, collate
 from utils import (
     mean_pooling,
     cos_sim_loss,
-    clr_cos_loss,
-    sim_clr_loss
+    sim_clr_loss,
+    norm_temp_ce_loss
 )
 
 
@@ -113,8 +113,9 @@ def load_args():
         default='cos_sim',
         choices=[
             'cos_sim',
-            'clr_cos',
             'sim_clr',
+            'norm_temp_ce_sum',
+            'norm_temp_ce_mean',
         ],
         type=str,
         help='Specify the type of loss criteria during training'
@@ -147,6 +148,12 @@ def load_args():
         default='gelu',
         type=str,
         help='The activation function for WhiSBERT [Default: `GELU`]'
+    )
+    parser.add_argument(
+        "--tau",
+        default=0.1,
+        type=float,
+        help="The temperature value for the contrastive loss. Note this will only be applied when using: `Normalized Temperature-Scaled Cross Entropy Loss`"
     )
     parser.add_argument(
         "--eps",
@@ -269,10 +276,19 @@ def train(
 
     if config.loss == 'cos_sim':
         loss_func = cos_sim_loss
-    elif config.loss == 'clr_cos':
-        loss_func = clr_cos_loss
+
     elif config.loss == 'sim_clr':
         loss_func = sim_clr_loss
+
+    elif config.loss == 'norm_temp_ce_sum':
+        def norm_temp_ce_sum(whis_embs, sbert_embs):
+            return norm_temp_ce_loss(whis_embs, sbert_embs, tau=config.tau, pooling_mode='sum')
+        loss_func = norm_temp_ce_sum
+
+    elif config.loss == 'norm_temp_ce_mean':
+        def norm_temp_ce_loss_mean(whis_embs, sbert_embs):
+            return norm_temp_ce_loss(whis_embs, sbert_embs, tau=config.tau, pooling_mode='mean')
+        loss_func = norm_temp_ce_loss_mean
 
     if save_name:
         save_dir = os.path.join(CHECKPOINT_DIR, save_name)
@@ -330,11 +346,11 @@ def train(
                 )
 
                 # Apply loss function
-                contrastive_loss = loss_func(whis_embs, sbert_embs)
-                epoch_train_loss += contrastive_loss.item()
+                loss = loss_func(whis_embs, sbert_embs)
+                epoch_train_loss += loss.item()
 
             # Scale the loss and perform backward pass
-            scaler.scale(contrastive_loss).backward()
+            scaler.scale(loss).backward()
 
             # Gradient clipping (optional but common for stability)
             torch.nn.utils.clip_grad_norm_(whisbert.parameters(), max_norm=1.0)
@@ -389,8 +405,8 @@ def train(
                     )
 
                     # Apply loss function
-                    contrastive_loss = loss_func(whis_embs, sbert_embs)
-                    epoch_val_loss += contrastive_loss.item()
+                    loss = loss_func(whis_embs, sbert_embs)
+                    epoch_val_loss += loss.item()
 
         # Adjust the learning rate based on validation loss
         scheduler.step(epoch_val_loss)
@@ -444,6 +460,7 @@ def main():
         new_encoder_n_heads = args.new_encoder_n_heads,
         new_encoder_ffn_dim = args.new_encoder_ffn_dim,
         activation_function = args.activation_function,
+        tau = args.tau,
         eps = args.eps,
         dropout = args.dropout,
         encoder_layerdrop = args.encoder_layerdrop,

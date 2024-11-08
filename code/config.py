@@ -13,6 +13,7 @@ class WhiSBERTConfig():
         new_encoder_n_heads: int = 12,
         new_encoder_ffn_dim: int = 3072,
         activation_function: str = 'gelu',
+        tau: float = 0.1,
         eps: float = 1e-5,
         dropout: float = 0.1,
         encoder_layerdrop: float = 0.1,
@@ -57,6 +58,7 @@ class WhiSBERTConfig():
         self.new_encoder_n_heads = new_encoder_n_heads
         self.new_encoder_ffn_dim = new_encoder_ffn_dim
         self.activation_function = activation_function
+        self.tau = tau
         self.eps = eps
         self.dropout = dropout
         self.encoder_layerdrop = encoder_layerdrop

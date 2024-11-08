@@ -13,7 +13,7 @@ def last_pooling(embeddings, attention_mask):
     return embeddings[torch.arange(attention_mask.size(0)).unsqueeze(1), last_non_padding_indices].squeeze()
 
 
-# Cosine Similarity
+# Cosine Similarity Loss
 def cos_sim_loss(whis_embs, sbert_embs):
     # z_audio = F.normalize(whis_embs, p=2, dim=1)
     # z_text = F.normalize(sbert_embs, p=2, dim=1)
@@ -23,8 +23,8 @@ def cos_sim_loss(whis_embs, sbert_embs):
     return 1 - torch.cosine_similarity(whis_embs, sbert_embs, dim=-1).mean()
 
 
-# Cosine Similarity Contrastive Loss
-def clr_cos_loss(whis_embs, sbert_embs):
+# Simple Contrastive Learning Loss
+def sim_clr_loss(whis_embs, sbert_embs):
     z_audio = F.normalize(whis_embs, p=2, dim=1)
     z_text = F.normalize(sbert_embs, p=2, dim=1)
     similarity_matrix = torch.matmul(z_audio, z_text.T)
@@ -35,45 +35,31 @@ def clr_cos_loss(whis_embs, sbert_embs):
     return positive_loss + negative_loss
 
 
-# SimCLR Contrastive Loss (Using Cosine Similarity)
-def sim_clr_loss(whis_embs, sbert_embs, tau=0.10):
-    # Helpful link I used for reference:
-    # https://jamesmccaffrey.wordpress.com/2022/04/11/an-example-of-normalized-temperature-scaled-cross-entropy-loss/
-    z_audio = F.normalize(whis_embs, dim=1)
-    z_text = F.normalize(sbert_embs, dim=1)
-    
-    # Compute cosine similarity for all pairs in the batch
-    similarity_matrix = torch.matmul(z_audio, z_text.T) / tau
-    similarity_matrix = torch.exp(similarity_matrix)
-
-    # Sum over each row, excluding the diagonal (self-similarity terms)
-    pos_sims = torch.diag(similarity_matrix)
-    neg_sims_sum = similarity_matrix.sum(dim=1) - pos_sims
-    
-    losses = -torch.log(pos_sims / neg_sims_sum)
-    return losses.sum()
-
-
-def batch_positive_pair_loss(whis_embs, sbert_embs, tau=0.10):
-    # Helpful link I used for reference:
-    # https://jamesmccaffrey.wordpress.com/2022/04/11/an-example-of-normalized-temperature-scaled-cross-entropy-loss/
+# Normalized Temperature-Scaled Cross Entropy Loss
+def norm_temp_ce_loss(whis_embs, sbert_embs, tau=0.1, pooling_mode='sum'):
+    """
+        Helpful link I used for reference:
+        https://jamesmccaffrey.wordpress.com/2022/04/11/an-example-of-normalized-temperature-scaled-cross-entropy-loss/
+        
+        Derived from the paper:
+        "A Simple Framework for Contrastive Learning of Visual Representations" (2020), Chen, et al.
+    """
     combined = torch.cat([whis_embs, sbert_embs], dim=0)  # shape (2 * batch_size, emb_dim)
     combined = F.normalize(combined, dim=1)
 
     # Define positive pairs (each original data with its corresponding augmented data)
     batch_size = whis_embs.shape[0]
     pos_pairs = torch.arange(batch_size)
-    pos_indices = pos_pairs + batch_size  # offset by batch_size to point to the augmented data
     
     # Compute cosine similarity for all pairs in the batch
     similarity_matrix = torch.matmul(combined, combined.T) / tau
     similarity_matrix = torch.exp(similarity_matrix)
     
-    pos_sims = similarity_matrix[pos_pairs, pos_indices]
+    pos_sims = similarity_matrix[pos_pairs, pos_pairs + batch_size]
     neg_sims_sum = similarity_matrix[:batch_size].sum(dim=1) - torch.diag(similarity_matrix[:batch_size])
     
     losses = -torch.log(pos_sims / neg_sims_sum)
-    return losses.sum()
+    return losses.sum() if pooling_mode == 'sum' else losses.mean()
 
 
 # # Supervised Contrastive Loss
