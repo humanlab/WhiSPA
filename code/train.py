@@ -450,7 +450,7 @@ def train(
 def main():
     args = load_args()
 
-    print('\nPreparing Model Configuration...')
+    print('Preparing Model Configuration...')
     config = WhiSBERTConfig(
         whisper_model_id = args.whisper_model_id,
         pooling_mode = args.pooling_mode,
