@@ -208,7 +208,7 @@ def load_models(config, load_path):
         tokenizer = None
         sbert = SentenceTransformer(config.sbert_model_id, cache_folder=CACHE_DIR, device=config.device)
     else:
-        tokenizer = AutoTokenizer.from_pretrained(config.sbert_model_id, cache_dir=CACHE_DIR)
+        tokenizer = AutoTokenizer.from_pretrained(config.sbert_model_id, cache_dir=CACHE_DIR, TOKENIZERS_PARALLELISM=True)
         sbert = AutoModel.from_pretrained(config.sbert_model_id, cache_dir=CACHE_DIR).to(config.device)
 
     if config.device == 'cuda':
@@ -493,7 +493,7 @@ def main():
     print(f'\tTraining dataset size (N): {train_size}')
     print(f'\tValidation dataset size (N): {val_size}')
 
-    if args.save_name:
+    if args.save_name and os.path.exists(args.save_name):
         print(f'WARNING: Overwriting existing model directory!')
         print(f'\t"{args.save_name}" already exists in "{CHECKPOINT_DIR}"')
 
