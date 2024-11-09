@@ -33,7 +33,7 @@ from utils import (
 
 """
 CUDA_VISIBLE_DEVICES=0 python code/inference.py \
---load_name whisper-tiny_mean_cos-sim_50_512_1e-5_1e-2 \
+--load_name whisper-384_mean_cos-sim_50_512_1e-5_1e-2 \
 --batch_size 1024 \
 --num_workers 12 \
 --no_shuffle
@@ -87,14 +87,6 @@ def load_models(config, load_name):
     )
     whisbert = WhiSBERTModel(config).to(config.device)
 
-    # # Load the pre-trained SentenceTransformer models
-    # if config.sbert_model_id == 'sentence-transformers/distiluse-base-multilingual-cased-v1':
-    #     tokenizer = None
-    #     sbert = SentenceTransformer(config.sbert_model_id, cache_folder=CACHE_DIR, device=config.device)
-    # else:
-    #     tokenizer = AutoTokenizer.from_pretrained('sentence-transformers/all-mpnet-base-v2', cache_dir=CACHE_DIR, TOKENIZERS_PARALLELISM=False)
-    #     sbert = AutoModel.from_pretrained('sentence-transformers/all-mpnet-base-v2', cache_dir=CACHE_DIR).to(config.device)
-
     if config.device == 'cuda':
         if torch.cuda.is_available():
             gpus = list(range(torch.cuda.device_count()))
@@ -115,15 +107,13 @@ def load_models(config, load_name):
         state_dict = {k.replace('module.', ''): v for k, v in state_dict.items()}
         whisbert.load_state_dict(state_dict)
 
-    return processor, whisbert, None, None
+    return processor, whisbert
 
 
 def inference(
     dataset,
     processor,
     whisbert,
-    tokenizer,
-    sbert,
     config,
     load_name
 ):
@@ -146,27 +136,9 @@ def inference(
         df.to_csv(wtc_output_filepath, index=False)
 
     whisbert.eval()
-    # sbert.eval()
     start_time = time.time()
     with torch.no_grad():
         for batch in tqdm(data_loader):           
-            # # Get SBERT's embedding
-            # if config.sbert_model_id != 'sentence-transformers/distiluse-base-multilingual-cased-v1':
-            #     # SBERT-based tokenization
-            #     sbert_inputs = tokenizer(
-            #         batch['message'],
-            #         padding=True,
-            #         truncation=True,
-            #         return_tensors='pt'
-            #     ).to(config.device)
-            #     sbert_embs = sbert(**sbert_inputs).last_hidden_state
-            #     sbert_embs = mean_pooling(sbert_embs, sbert_inputs['attention_mask'])
-            # else:
-            #     if isinstance(sbert, torch.nn.DataParallel):
-            #         sbert_embs = torch.from_numpy(sbert.module.encode(batch['message']))
-            #     else:
-            #         sbert_embs = torch.from_numpy(sbert.encode(batch['message']))
-
             # Whisper-based tokenization
             with torch.no_grad():
                 outputs = processor.tokenizer(
@@ -183,8 +155,6 @@ def inference(
                 outputs['input_ids'],
                 outputs['attention_mask']
             )
-
-            # sbert_embs = F.normalize(sbert_embs, p=2, dim=1)
             whis_embs = F.normalize(whis_embs, p=2, dim=1)
 
             for s_idx, segment_id in enumerate(batch['segment_id']):
@@ -197,7 +167,7 @@ def inference(
 
     elapsed_time = timedelta(seconds=time.time() - start_time)
     print(f"Elapsed Time: {elapsed_time}")
-        
+    
 
 def main():
     args = load_args()
@@ -215,7 +185,7 @@ def main():
     print(config)
 
     print('\nLoading and Initializing Models with Config...')
-    processor, whisbert, tokenizer, sbert = load_models(config, args.load_name)
+    processor, whisbert = load_models(config, args.load_name)
 
     print('\nPreprocessing AudioDataset...')
     dataset = AudioDataset(processor, mode='inference')
@@ -226,8 +196,6 @@ def main():
         dataset,
         processor,
         whisbert,
-        tokenizer,
-        sbert,
         config,
         args.load_name
     )
