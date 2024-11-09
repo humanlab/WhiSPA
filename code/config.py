@@ -1,5 +1,6 @@
 CACHE_DIR = '/cronus_data/rrao/cache/'
 CHECKPOINT_DIR = '/cronus_data/rrao/WhiSBERT/models/'
+EMBEDDINGS_DIR = '/cronus_data/rrao/WhiSBERT/embeddings/'
 
 
 class WhiSBERTConfig():

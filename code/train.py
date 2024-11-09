@@ -17,7 +17,7 @@ from pprint import pprint
 
 from config import WhiSBERTConfig, CACHE_DIR, CHECKPOINT_DIR
 from model import WhiSBERTModel
-from data import AudioDataset, collate
+from data import AudioDataset, collate_train
 from utils import (
     mean_pooling,
     cos_sim_loss,
@@ -80,13 +80,13 @@ def load_args():
         '--save_name',
         default='',
         type=str,
-        help='Specify the filename of the model directory. After training, the best state will be saved to: `/cronus_data/rrao/WhiSBERT/models/<MODEL_NAME>/best.pth`'
+        help='Specify the filename of the model directory. After training, the best state will be saved to: `/cronus_data/rrao/WhiSBERT/models/<MODEL_NAME>/`'
     )
     parser.add_argument(
         '--load_name',
         default='',
         type=str,
-        help='Specify the filename to the model directory. It will use the `best.pth` state saved in: /cronus_data/rrao/WhiSBERT/models/<MODEL_NAME>/`'
+        help='Specify the filename to the model directory. It will use `config.pth` and `best.pth` saved in: /cronus_data/rrao/WhiSBERT/models/<MODEL_NAME>/`'
     )
     # Hyperparams
     parser.add_argument(
@@ -265,14 +265,14 @@ def train(
         batch_size=config.batch_size,
         num_workers=config.num_workers,
         shuffle=config.shuffle,
-        collate_fn=collate
+        collate_fn=collate_train
     )
     val_loader = torch.utils.data.DataLoader(
         val_dataset,
         batch_size=config.batch_size,
         num_workers=config.num_workers,
         shuffle=config.shuffle,
-        collate_fn=collate
+        collate_fn=collate_train
     )
 
     scaler = torch.amp.GradScaler(config.device)
@@ -324,7 +324,7 @@ def train(
             if config.sbert_model_id != 'sentence-transformers/distiluse-base-multilingual-cased-v1':
                 # SBERT-based tokenization
                 sbert_inputs = tokenizer(
-                    batch['text'],
+                    batch['message'],
                     padding=True,
                     truncation=True,
                     return_tensors='pt'
@@ -340,14 +340,14 @@ def train(
                     sbert_embs = mean_pooling(sbert_embs, sbert_inputs['attention_mask'])
                 else:
                     if isinstance(sbert, torch.nn.DataParallel):
-                        sbert_embs = torch.from_numpy(sbert.module.encode(batch['text']))
+                        sbert_embs = torch.from_numpy(sbert.module.encode(batch['message']))
                     else:
-                        sbert_embs = torch.from_numpy(sbert.encode(batch['text']))
+                        sbert_embs = torch.from_numpy(sbert.encode(batch['message']))
 
                 # Whisper-based tokenization
                 with torch.no_grad():
                     outputs = processor.tokenizer(
-                        batch['text'],
+                        batch['message'],
                         padding=True,
                         truncation=True,
                         max_length=512,
@@ -385,7 +385,7 @@ def train(
                 if config.sbert_model_id != 'sentence-transformers/distiluse-base-multilingual-cased-v1':
                     # SBERT-based tokenization
                     sbert_inputs = tokenizer(
-                        batch['text'],
+                        batch['message'],
                         padding=True,
                         truncation=True,
                         return_tensors='pt'
@@ -400,13 +400,13 @@ def train(
                         sbert_embs = mean_pooling(sbert_embs, sbert_inputs['attention_mask'])
                     else:
                         if isinstance(sbert, torch.nn.DataParallel):
-                            sbert_embs = torch.from_numpy(sbert.module.encode(batch['text']))
+                            sbert_embs = torch.from_numpy(sbert.module.encode(batch['message']))
                         else:
-                            sbert_embs = torch.from_numpy(sbert.encode(batch['text']))
+                            sbert_embs = torch.from_numpy(sbert.encode(batch['message']))
 
                     # Whisper-based tokenization
                     outputs = processor.tokenizer(
-                        batch['text'],
+                        batch['message'],
                         padding=True,
                         truncation=True,
                         max_length=512,
@@ -445,7 +445,7 @@ def train(
         train_loss.append(avg_train_loss)
         val_loss.append(avg_val_loss)
 
-        epoch_elapsed_time = timedelta(seconds=time.time()-epoch_start_time)
+        epoch_elapsed_time = timedelta(seconds=time.time() - epoch_start_time)
 
         # Plot and save loss curves
         plot_loss(train_loss, val_loss, save_name)
@@ -542,9 +542,11 @@ def main():
 
     if args.save_name:
         print(f'\nSaving WhiSBERT Model and Config...')
+        
         save_dir = os.path.join(CHECKPOINT_DIR, args.save_name)
         config_path = os.path.join(save_dir, 'config.pth')
         torch.save(config, config_path)
+
         best_path = os.path.join(save_dir, 'best.pth')
         last_path = os.path.join(save_dir, 'last.pth')
         torch.save(whisbert.state_dict(), last_path)

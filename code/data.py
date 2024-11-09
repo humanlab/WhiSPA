@@ -9,21 +9,35 @@ WTC_AUDIO_DIR = '/cronus_data/wtc_clinic/Clinic_Audio_Segments/'
 
 class AudioDataset(torch.utils.data.Dataset):
     
-    def __init__(self, processor):
-        self.hitop_segments_messages = pd.read_csv('/cronus_data/rrao/hitop/segment_outcomes.csv')
-        self.wtc_segments_messages = pd.read_csv('/cronus_data/rrao/wtc_clinic/segment_outcomes.csv')
+    def __init__(self, processor, mode='train'):
+        self.hitop_segments_df = pd.read_csv('/cronus_data/rrao/hitop/segment_outcomes.csv')
+        self.wtc_segments_df = pd.read_csv('/cronus_data/rrao/wtc_clinic/segment_outcomes.csv')
         self.processor = processor
+        self.mode = mode
 
     def __len__(self):
-        return len(self.hitop_segments_messages) + len(self.wtc_segments_messages)
+        return len(self.hitop_segments_df) + len(self.wtc_segments_df)
     
     def __getitem__(self, idx):
-        audio_dir = HITOP_AUDIO_DIR if idx < len(self.hitop_segments_messages) else WTC_AUDIO_DIR
-        i = idx if idx < len(self.hitop_segments_messages) else idx - len(self.hitop_segments_messages)
-        df = self.hitop_segments_messages if idx < len(self.hitop_segments_messages) else self.wtc_segments_messages
+        audio_dir = HITOP_AUDIO_DIR if idx < len(self.hitop_segments_df) else WTC_AUDIO_DIR
+        if idx < len(self.hitop_segments_df):
+            i = idx
+            df = self.hitop_segments_df
+            dataset_name = 'hitop'
+        else:
+            i = idx - len(self.hitop_segments_df)
+            df = self.wtc_segments_df
+            dataset_name == 'wtc'
         
         audio_path = os.path.join(audio_dir, df.iloc[i]['segment_filename'])
-        return preprocess_audio(self.processor, audio_path), df.iloc[i]['segment_message']
+        audio_inputs = preprocess_audio(self.processor, audio_path)
+        message = df.iloc[i]['segment_message']
+        if self.mode == 'train':
+            return audio_inputs, message
+        elif self.mode == 'inference':
+            return dataset_name, df.iloc[i]['segment_id'], audio_inputs, message
+        else:
+            return
 
 
 def preprocess_audio(processor, audio_path):
@@ -38,8 +52,17 @@ def preprocess_audio(processor, audio_path):
     return processor(waveform.squeeze(), sampling_rate=16000, return_tensors="pt")['input_features']
 
 
-def collate(batch):
+def collate_train(batch):
     return {
         'audio_inputs': torch.cat([a for a, _ in batch], dim=0),
-        'text': [t for _, t  in batch]
+        'message': [m for _, m  in batch]
+    }
+
+
+def collate_inference(batch):
+    return {
+        'dataset_name': [d for d, _, _, _ in batch],
+        'segment_id': [i for _, i, _, _ in batch],
+        'audio_inputs': torch.cat([a for _, _, a, _ in batch], dim=0),
+        'message': [m for _, _, _, m  in batch]
     }
