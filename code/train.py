@@ -15,7 +15,11 @@ from tqdm import tqdm
 from matplotlib import pyplot as plt
 from pprint import pprint
 
-from config import WhiSBERTConfig, CACHE_DIR, CHECKPOINT_DIR
+from config import (
+    WhiSBERTConfig,
+    CACHE_DIR,
+    CHECKPOINT_DIR
+)
 from model import WhiSBERTModel
 from data import AudioDataset, collate_train
 from utils import (

@@ -27,7 +27,7 @@ class AudioDataset(torch.utils.data.Dataset):
         else:
             i = idx - len(self.hitop_segments_df)
             df = self.wtc_segments_df
-            dataset_name == 'wtc'
+            dataset_name = 'wtc'
         
         audio_path = os.path.join(audio_dir, df.iloc[i]['segment_filename'])
         audio_inputs = preprocess_audio(self.processor, audio_path)

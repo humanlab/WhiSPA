@@ -4,13 +4,7 @@ import os
 import argparse
 import torch
 import torch.nn.functional as F
-from transformers import (
-    AutoTokenizer,
-    AutoModel,
-    WhisperProcessor
-)
-from sentence_transformers import SentenceTransformer
-from collections import OrderedDict
+from transformers import WhisperProcessor
 import pandas as pd
 from tqdm import tqdm
 from pprint import pprint
@@ -23,17 +17,11 @@ from config import (
 )
 from model import WhiSBERTModel
 from data import AudioDataset, collate_inference
-from utils import (
-    mean_pooling,
-    cos_sim_loss,
-    sim_clr_loss,
-    norm_temp_ce_loss
-)
 
 
 """
 CUDA_VISIBLE_DEVICES=0 python code/inference.py \
---load_name whisper-384_mean_cos-sim_50_512_1e-5_1e-2 \
+--load_name whisper-384 \
 --batch_size 1024 \
 --num_workers 12 \
 --no_shuffle
