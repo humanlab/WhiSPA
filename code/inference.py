@@ -511,47 +511,47 @@ def main():
     print('\nLoading and Initializing Models with Config...')
     processor, whisbert, tokenizer, sbert = load_models(config, args.load_name)
 
-    print('\nPreprocessing AudioDataset...')
-    dataset = AudioDataset(processor)
+    # print('\nPreprocessing AudioDataset...')
+    # dataset = AudioDataset(processor)
 
-    # Calculate lengths for the train/val split (80:20)
-    total_size = len(dataset)
-    train_size = int(0.8 * total_size)  # 80% for training
-    val_size = total_size - train_size  # 20% for validation
-    # Perform the split
-    train_dataset, val_dataset = torch.utils.data.random_split(dataset, [train_size, val_size])
-    print(f'\tTotal dataset size (N): {total_size}')
-    print(f'\tTraining dataset size (N): {train_size}')
-    print(f'\tValidation dataset size (N): {val_size}')
+    # # Calculate lengths for the train/val split (80:20)
+    # total_size = len(dataset)
+    # train_size = int(0.8 * total_size)  # 80% for training
+    # val_size = total_size - train_size  # 20% for validation
+    # # Perform the split
+    # train_dataset, val_dataset = torch.utils.data.random_split(dataset, [train_size, val_size])
+    # print(f'\tTotal dataset size (N): {total_size}')
+    # print(f'\tTraining dataset size (N): {train_size}')
+    # print(f'\tValidation dataset size (N): {val_size}')
 
-    if args.save_name and os.path.exists(args.save_name):
-        print(f'WARNING: Overwriting existing model directory!')
-        print(f'\t"{args.save_name}" already exists in "{CHECKPOINT_DIR}"')
+    # if args.save_name and os.path.exists(args.save_name):
+    #     print(f'WARNING: Overwriting existing model directory!')
+    #     print(f'\t"{args.save_name}" already exists in "{CHECKPOINT_DIR}"')
 
-    print('\nStarting Training...')
-    train(
-        train_dataset,
-        val_dataset,
-        processor,
-        whisbert,
-        tokenizer,
-        sbert,
-        config,
-        args.save_name
-    )
+    # print('\nStarting Training...')
+    # train(
+    #     train_dataset,
+    #     val_dataset,
+    #     processor,
+    #     whisbert,
+    #     tokenizer,
+    #     sbert,
+    #     config,
+    #     args.save_name
+    # )
 
-    if args.save_name:
-        print(f'\nSaving WhiSBERT Model and Config...')
-        save_dir = os.path.join(CHECKPOINT_DIR, args.save_name)
-        config_path = os.path.join(save_dir, 'config.pth')
-        torch.save(config, config_path)
-        best_path = os.path.join(save_dir, 'best.pth')
-        last_path = os.path.join(save_dir, 'last.pth')
-        torch.save(whisbert.state_dict(), last_path)
-        print(f'\tDone.\t`{best_path}`\n')
-        print(f'\tDone.\t`{last_path}`\n')
+    # if args.save_name:
+    #     print(f'\nSaving WhiSBERT Model and Config...')
+    #     save_dir = os.path.join(CHECKPOINT_DIR, args.save_name)
+    #     config_path = os.path.join(save_dir, 'config.pth')
+    #     torch.save(config, config_path)
+    #     best_path = os.path.join(save_dir, 'best.pth')
+    #     last_path = os.path.join(save_dir, 'last.pth')
+    #     torch.save(whisbert.state_dict(), last_path)
+    #     print(f'\tDone.\t`{best_path}`\n')
+    #     print(f'\tDone.\t`{last_path}`\n')
 
-    torch.cuda.empty_cache()
+    # torch.cuda.empty_cache()
 
 
 if __name__ == '__main__':    
