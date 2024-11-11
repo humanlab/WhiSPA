@@ -1,0 +1,54 @@
+CUDA_VISIBLE_DEVICES=2,3 \
+python code/train.py \
+--whisper_model_id openai/whisper-tiny \
+--pooling_mode mean \
+--loss cos_sim \
+--num_epochs 50 \
+--batch_size 512 \
+--num_workers 16 \
+--lr 1e-5 \
+--wd 1e-2 \
+--save_name whisper-384_mean_cos-sim_50_512_1e-5_1e-2 \
+> logs/whisper-384_mean_cos-sim_50_512_1e-5_1e-2.txt
+Done.
+
+CUDA_VISIBLE_DEVICES=2,3 \
+python code/train.py \
+--whisper_model_id openai/whisper-tiny \
+--pooling_mode mean \
+--loss sim_clr \
+--num_epochs 50 \
+--batch_size 512 \
+--num_workers 16 \
+--lr 1e-5 \
+--wd 1e-2 \
+--save_name whisper-384_mean_sim-clr_50_512_1e-5_1e-2 \
+> logs/whisper-384_mean_sim-clr_50_512_1e-5_1e-2.txt
+Interrupted at Epoch 41.
+
+CUDA_VISIBLE_DEVICES=2,3 \
+python code/train.py \
+--whisper_model_id openai/whisper-tiny \
+--pooling_mode mean \
+--loss norm_temp_ce_sum \
+--num_epochs 50 \
+--batch_size 512 \
+--num_workers 16 \
+--lr 1e-5 \
+--wd 1e-2 \
+--save_name whisper-384_mean_norm-temp-ce-sum_50_512_1e-5_1e-2 \
+> logs/whisper-384_mean_norm-temp-ce-sum_50_512_1e-5_1e-2.txt
+Done.
+
+CUDA_VISIBLE_DEVICES=2,3 \
+python code/train.py \
+--whisper_model_id openai/whisper-tiny \
+--pooling_mode mean \
+--loss norm_temp_ce_mean \
+--num_epochs 50 \
+--batch_size 512 \
+--num_workers 16 \
+--lr 1e-5 \
+--wd 1e-2 \
+--save_name whisper-384_mean_norm-temp-ce-mean_50_512_1e-5_1e-2 \
+> logs/whisper-384_mean_norm-temp-ce-mean_50_512_1e-5_1e-2.txt

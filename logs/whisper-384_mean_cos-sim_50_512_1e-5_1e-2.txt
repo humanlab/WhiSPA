@@ -1,0 +1,246 @@
+
+Preparing Model Configuration...
+{'activation_dropout': 0.1,
+ 'activation_function': 'gelu',
+ 'attention_dropout': 0.1,
+ 'batch_size': 512,
+ 'decoder_layerdrop': 0.1,
+ 'device': 'cuda',
+ 'dropout': 0.1,
+ 'emb_dim': 384,
+ 'encoder_layerdrop': 0.1,
+ 'eps': 1e-05,
+ 'learning_rate': 1e-05,
+ 'loss': 'cos_sim',
+ 'new_encoder_ffn_dim': 3072,
+ 'new_encoder_n_heads': 12,
+ 'new_encoder_n_layers': 12,
+ 'num_epochs': 50,
+ 'num_workers': 16,
+ 'pooling_mode': 'mean',
+ 'sbert_model_id': 'sentence-transformers/all-MiniLM-L12-v2',
+ 'shuffle': True,
+ 'tau': 0.1,
+ 'use_sbert_encoder': False,
+ 'weight_decay': 0.01,
+ 'whisper_model_id': 'openai/whisper-tiny'}
+
+Loading and Initializing Models with Config...
+
+Available GPU IDs: [0, 1]
+	GPU 0: NVIDIA RTX A6000
+	GPU 1: NVIDIA RTX A6000
+
+
+Preprocessing AudioDataset...
+	Total dataset size (N): 726023
+	Training dataset size (N): 580818
+	Validation dataset size (N): 145205
+
+Starting Training...
+Epoch 1/50
+	Training Loss: 0.5192
+	Validation Loss: 0.4141
+	Learning Rate: 1e-05
+Epoch 2/50
+	Training Loss: 0.3776
+	Validation Loss: 0.3554
+	Learning Rate: 1e-05
+Epoch 3/50
+	Training Loss: 0.3435
+	Validation Loss: 0.3351
+	Learning Rate: 1e-05
+Epoch 4/50
+	Training Loss: 0.3245
+	Validation Loss: 0.3200
+	Learning Rate: 1e-05
+Epoch 5/50
+	Training Loss: 0.3147
+	Validation Loss: 0.3120
+	Learning Rate: 1e-05
+Epoch 6/50
+	Training Loss: 0.3078
+	Validation Loss: 0.3068
+	Learning Rate: 1e-05
+Epoch 7/50
+	Training Loss: 0.3036
+	Validation Loss: 0.3030
+	Learning Rate: 1e-05
+Epoch 8/50
+	Training Loss: 0.3004
+	Validation Loss: 0.3002
+	Learning Rate: 1e-05
+Epoch 9/50
+	Training Loss: 0.2972
+	Validation Loss: 0.2966
+	Learning Rate: 1e-05
+Epoch 10/50
+	Training Loss: 0.2937
+	Validation Loss: 0.2932
+	Learning Rate: 1e-05
+Epoch 11/50
+	Training Loss: 0.2904
+	Validation Loss: 0.2900
+	Learning Rate: 1e-05
+Epoch 12/50
+	Training Loss: 0.2874
+	Validation Loss: 0.2875
+	Learning Rate: 1e-05
+Epoch 13/50
+	Training Loss: 0.2848
+	Validation Loss: 0.2845
+	Learning Rate: 1e-05
+Epoch 14/50
+	Training Loss: 0.2820
+	Validation Loss: 0.2823
+	Learning Rate: 1e-05
+Epoch 15/50
+	Training Loss: 0.2800
+	Validation Loss: 0.2799
+	Learning Rate: 1e-05
+Epoch 16/50
+	Training Loss: 0.2774
+	Validation Loss: 0.2774
+	Learning Rate: 1e-05
+Epoch 17/50
+	Training Loss: 0.2753
+	Validation Loss: 0.2753
+	Learning Rate: 1e-05
+Epoch 18/50
+	Training Loss: 0.2730
+	Validation Loss: 0.2732
+	Learning Rate: 1e-05
+Epoch 19/50
+	Training Loss: 0.2707
+	Validation Loss: 0.2709
+	Learning Rate: 1e-05
+Epoch 20/50
+	Training Loss: 0.2685
+	Validation Loss: 0.2689
+	Learning Rate: 1e-05
+Epoch 21/50
+	Training Loss: 0.2665
+	Validation Loss: 0.2668
+	Learning Rate: 1e-05
+Epoch 22/50
+	Training Loss: 0.2645
+	Validation Loss: 0.2648
+	Learning Rate: 1e-05
+Epoch 23/50
+	Training Loss: 0.2626
+	Validation Loss: 0.2630
+	Learning Rate: 1e-05
+Epoch 24/50
+	Training Loss: 0.2607
+	Validation Loss: 0.2611
+	Learning Rate: 1e-05
+Epoch 25/50
+	Training Loss: 0.2589
+	Validation Loss: 0.2594
+	Learning Rate: 1e-05
+Epoch 26/50
+	Training Loss: 0.2572
+	Validation Loss: 0.2580
+	Learning Rate: 1e-05
+Epoch 27/50
+	Training Loss: 0.2560
+	Validation Loss: 0.2565
+	Learning Rate: 1e-05
+Epoch 28/50
+	Training Loss: 0.2544
+	Validation Loss: 0.2551
+	Learning Rate: 1e-05
+Epoch 29/50
+	Training Loss: 0.2530
+	Validation Loss: 0.2535
+	Learning Rate: 1e-05
+Epoch 30/50
+	Training Loss: 0.2514
+	Validation Loss: 0.2520
+	Learning Rate: 1e-05
+Epoch 31/50
+	Training Loss: 0.2502
+	Validation Loss: 0.2509
+	Learning Rate: 1e-05
+Epoch 32/50
+	Training Loss: 0.2488
+	Validation Loss: 0.2496
+	Learning Rate: 1e-05
+Epoch 33/50
+	Training Loss: 0.2474
+	Validation Loss: 0.2482
+	Learning Rate: 1e-05
+Epoch 34/50
+	Training Loss: 0.2460
+	Validation Loss: 0.2469
+	Learning Rate: 1e-05
+Epoch 35/50
+	Training Loss: 0.2448
+	Validation Loss: 0.2455
+	Learning Rate: 1e-05
+Epoch 36/50
+	Training Loss: 0.2435
+	Validation Loss: 0.2444
+	Learning Rate: 1e-05
+Epoch 37/50
+	Training Loss: 0.2423
+	Validation Loss: 0.2431
+	Learning Rate: 1e-05
+Epoch 38/50
+	Training Loss: 0.2411
+	Validation Loss: 0.2419
+	Learning Rate: 1e-05
+Epoch 39/50
+	Training Loss: 0.2401
+	Validation Loss: 0.2409
+	Learning Rate: 1e-05
+Epoch 40/50
+	Training Loss: 0.2389
+	Validation Loss: 0.2399
+	Learning Rate: 1e-05
+Epoch 41/50
+	Training Loss: 0.2378
+	Validation Loss: 0.2387
+	Learning Rate: 1e-05
+Epoch 42/50
+	Training Loss: 0.2367
+	Validation Loss: 0.2377
+	Learning Rate: 1e-05
+Epoch 43/50
+	Training Loss: 0.2357
+	Validation Loss: 0.2365
+	Learning Rate: 1e-05
+Epoch 44/50
+	Training Loss: 0.2346
+	Validation Loss: 0.2356
+	Learning Rate: 1e-05
+Epoch 45/50
+	Training Loss: 0.2336
+	Validation Loss: 0.2345
+	Learning Rate: 1e-05
+Epoch 46/50
+	Training Loss: 0.2326
+	Validation Loss: 0.2336
+	Learning Rate: 1e-05
+Epoch 47/50
+	Training Loss: 0.2316
+	Validation Loss: 0.2326
+	Learning Rate: 1e-05
+Epoch 48/50
+	Training Loss: 0.2307
+	Validation Loss: 0.2318
+	Learning Rate: 1e-05
+Epoch 49/50
+	Training Loss: 0.2298
+	Validation Loss: 0.2309
+	Learning Rate: 1e-05
+Epoch 50/50
+	Training Loss: 0.2289
+	Validation Loss: 0.2300
+	Learning Rate: 1e-05
+
+Saving WhiSBERT model...
+	Done.	`/cronus_data/rrao/WhiSBERT/models/whisper-tiny_mean_cos-sim_50_512_1e-5_1e-2/best.pth`
+
+	Done.	`/cronus_data/rrao/WhiSBERT/models/whisper-tiny_mean_cos-sim_50_512_1e-5_1e-2/last.pth`
+

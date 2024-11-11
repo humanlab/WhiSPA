@@ -1,0 +1,239 @@
+Preparing Model Configuration...
+{'activation_dropout': 0.1,
+ 'activation_function': 'gelu',
+ 'attention_dropout': 0.1,
+ 'batch_size': 512,
+ 'decoder_layerdrop': 0.1,
+ 'device': 'cuda',
+ 'dropout': 0.1,
+ 'emb_dim': 384,
+ 'encoder_layerdrop': 0.1,
+ 'eps': 1e-05,
+ 'learning_rate': 1e-05,
+ 'loss': 'sim_clr',
+ 'new_encoder_ffn_dim': 3072,
+ 'new_encoder_n_heads': 12,
+ 'new_encoder_n_layers': 12,
+ 'num_epochs': 50,
+ 'num_workers': 16,
+ 'pooling_mode': 'mean',
+ 'sbert_model_id': 'sentence-transformers/all-MiniLM-L12-v2',
+ 'shuffle': True,
+ 'tau': 0.1,
+ 'use_sbert_encoder': False,
+ 'weight_decay': 0.01,
+ 'whisper_model_id': 'openai/whisper-tiny'}
+
+Loading and Initializing Models with Config...
+
+Available GPU IDs: [0, 1]
+	GPU 0: NVIDIA RTX A6000
+	GPU 1: NVIDIA RTX A6000
+
+
+Preprocessing AudioDataset...
+	Total dataset size (N): 726023
+	Training dataset size (N): 580818
+	Validation dataset size (N): 145205
+
+Starting Training...
+Epoch 1/50
+	Training (sim_clr) Loss: 169120.3006
+	Validation (sim_clr) Loss: 164571.8589
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:28:55.953150
+Epoch 2/50
+	Training (sim_clr) Loss: 163109.8823
+	Validation (sim_clr) Loss: 160291.7552
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:29:02.652732
+Epoch 3/50
+	Training (sim_clr) Loss: 160294.1925
+	Validation (sim_clr) Loss: 160168.0693
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:29:35.973403
+Epoch 4/50
+	Training (sim_clr) Loss: 160180.6529
+	Validation (sim_clr) Loss: 159992.5405
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:29:55.552365
+Epoch 5/50
+	Training (sim_clr) Loss: 160117.9433
+	Validation (sim_clr) Loss: 160117.9068
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:33:54.591360
+Epoch 6/50
+	Training (sim_clr) Loss: 160051.2030
+	Validation (sim_clr) Loss: 159884.1487
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:30:46.875789
+Epoch 7/50
+	Training (sim_clr) Loss: 160053.3116
+	Validation (sim_clr) Loss: 159955.0709
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:31:18.684884
+Epoch 8/50
+	Training (sim_clr) Loss: 159980.3397
+	Validation (sim_clr) Loss: 159888.9639
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:31:27.158248
+Epoch 9/50
+	Training (sim_clr) Loss: 160026.4296
+	Validation (sim_clr) Loss: 159920.0536
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:31:24.097521
+Epoch 10/50
+	Training (sim_clr) Loss: 160119.5151
+	Validation (sim_clr) Loss: 159983.6457
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:33:23.470324
+Epoch 11/50
+	Training (sim_clr) Loss: 160057.5259
+	Validation (sim_clr) Loss: 159955.9915
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:30:19.528750
+Epoch 12/50
+	Training (sim_clr) Loss: 159938.2805
+	Validation (sim_clr) Loss: 159825.7321
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:31:50.493860
+Epoch 13/50
+	Training (sim_clr) Loss: 159951.3422
+	Validation (sim_clr) Loss: 159829.6977
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:32:56.427341
+Epoch 14/50
+	Training (sim_clr) Loss: 159958.9639
+	Validation (sim_clr) Loss: 159808.5656
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:32:12.441664
+Epoch 15/50
+	Training (sim_clr) Loss: 159956.5622
+	Validation (sim_clr) Loss: 159819.4460
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:32:56.203558
+Epoch 16/50
+	Training (sim_clr) Loss: 159946.3440
+	Validation (sim_clr) Loss: 159801.7554
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:31:34.462154
+Epoch 17/50
+	Training (sim_clr) Loss: 159931.2277
+	Validation (sim_clr) Loss: 159788.1254
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:32:23.278716
+Epoch 18/50
+	Training (sim_clr) Loss: 159921.3119
+	Validation (sim_clr) Loss: 159800.5037
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:30:05.009813
+Epoch 19/50
+	Training (sim_clr) Loss: 159912.6339
+	Validation (sim_clr) Loss: 159764.7695
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:28:55.416365
+Epoch 20/50
+	Training (sim_clr) Loss: 159904.7557
+	Validation (sim_clr) Loss: 159760.7773
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:30:12.910471
+Epoch 21/50
+	Training (sim_clr) Loss: 159892.4110
+	Validation (sim_clr) Loss: 159781.9055
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:30:24.376130
+Epoch 22/50
+	Training (sim_clr) Loss: 159895.7311
+	Validation (sim_clr) Loss: 159719.1073
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:30:51.445727
+Epoch 23/50
+	Training (sim_clr) Loss: 159887.5932
+	Validation (sim_clr) Loss: 159733.1015
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:30:35.215305
+Epoch 24/50
+	Training (sim_clr) Loss: 159878.3543
+	Validation (sim_clr) Loss: 159755.5112
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:30:38.784207
+Epoch 25/50
+	Training (sim_clr) Loss: 159877.3054
+	Validation (sim_clr) Loss: 159723.9083
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:29:45.917033
+Epoch 26/50
+	Training (sim_clr) Loss: 159865.0991
+	Validation (sim_clr) Loss: 159781.2002
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:29:48.731364
+Epoch 27/50
+	Training (sim_clr) Loss: 159876.2459
+	Validation (sim_clr) Loss: 159749.8277
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:28:36.186696
+Epoch 28/50
+	Training (sim_clr) Loss: 159862.6503
+	Validation (sim_clr) Loss: 159745.0804
+	Learning Rate: 1.0000000000000002e-06
+	Epoch Elapsed Time: 0:28:19.927155
+Epoch 29/50
+	Training (sim_clr) Loss: 159782.1732
+	Validation (sim_clr) Loss: 159641.2415
+	Learning Rate: 1.0000000000000002e-06
+	Epoch Elapsed Time: 0:28:45.179488
+Epoch 30/50
+	Training (sim_clr) Loss: 159778.3475
+	Validation (sim_clr) Loss: 159637.1462
+	Learning Rate: 1.0000000000000002e-06
+	Epoch Elapsed Time: 0:28:39.523780
+Epoch 31/50
+	Training (sim_clr) Loss: 159777.9284
+	Validation (sim_clr) Loss: 159646.9103
+	Learning Rate: 1.0000000000000002e-06
+	Epoch Elapsed Time: 0:28:04.967622
+Epoch 32/50
+	Training (sim_clr) Loss: 159781.5849
+	Validation (sim_clr) Loss: 159643.7110
+	Learning Rate: 1.0000000000000002e-06
+	Epoch Elapsed Time: 0:27:49.018891
+Epoch 33/50
+	Training (sim_clr) Loss: 159779.9321
+	Validation (sim_clr) Loss: 159637.7976
+	Learning Rate: 1.0000000000000002e-06
+	Epoch Elapsed Time: 0:28:29.611266
+Epoch 34/50
+	Training (sim_clr) Loss: 159777.5696
+	Validation (sim_clr) Loss: 159637.7657
+	Learning Rate: 1.0000000000000002e-06
+	Epoch Elapsed Time: 0:28:35.865121
+Epoch 35/50
+	Training (sim_clr) Loss: 159779.7254
+	Validation (sim_clr) Loss: 159639.4820
+	Learning Rate: 1.0000000000000002e-07
+	Epoch Elapsed Time: 0:28:16.415952
+Epoch 36/50
+	Training (sim_clr) Loss: 159772.1203
+	Validation (sim_clr) Loss: 159634.4460
+	Learning Rate: 1.0000000000000002e-07
+	Epoch Elapsed Time: 0:28:24.155749
+Epoch 37/50
+	Training (sim_clr) Loss: 159771.2387
+	Validation (sim_clr) Loss: 159632.4839
+	Learning Rate: 1.0000000000000002e-07
+	Epoch Elapsed Time: 0:28:30.659294
+Epoch 38/50
+	Training (sim_clr) Loss: 159770.0845
+	Validation (sim_clr) Loss: 159632.6918
+	Learning Rate: 1.0000000000000002e-07
+	Epoch Elapsed Time: 0:28:19.774236
+Epoch 39/50
+	Training (sim_clr) Loss: 159770.4521
+	Validation (sim_clr) Loss: 159632.8846
+	Learning Rate: 1.0000000000000002e-07
+	Epoch Elapsed Time: 0:29:05.724384
+Epoch 40/50
+	Training (sim_clr) Loss: 159771.8688
+	Validation (sim_clr) Loss: 159633.3860
+	Learning Rate: 1.0000000000000002e-07
+	Epoch Elapsed Time: 0:29:40.271786

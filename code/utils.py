@@ -23,7 +23,7 @@ def cos_sim_loss(whis_embs, sbert_embs):
     return 1 - torch.cosine_similarity(whis_embs, sbert_embs, dim=-1).mean()
 
 
-# Simple Contrastive Learning Loss
+# Cosine Similarity Contrastive Learning Loss
 def sim_clr_loss(whis_embs, sbert_embs):
     z_audio = F.normalize(whis_embs, p=2, dim=1)
     z_text = F.normalize(sbert_embs, p=2, dim=1)

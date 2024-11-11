@@ -1,5 +1,6 @@
 import time
 from datetime import timedelta
+from collections import OrderedDict
 import os
 import argparse
 import torch
@@ -10,7 +11,6 @@ from transformers import (
     WhisperProcessor
 )
 from sentence_transformers import SentenceTransformer
-from collections import OrderedDict
 from tqdm import tqdm
 from matplotlib import pyplot as plt
 from pprint import pprint
@@ -309,10 +309,6 @@ def train(
             return norm_temp_ce_loss(whis_embs, sbert_embs, tau=config.tau, pooling_mode='mean')
         loss_func = norm_temp_ce_mean_loss
 
-    if save_name:
-        save_dir = os.path.join(CHECKPOINT_DIR, save_name)
-        os.makedirs(save_dir, exist_ok=True)
-
     sbert.eval()
     train_loss = []
     val_loss = []
@@ -443,7 +439,7 @@ def train(
         if avg_val_loss < best_val_loss:
             best_val_loss = avg_val_loss
             best_state = OrderedDict({name: param.clone() for name, param in whisbert.state_dict().items()})
-            best_path = os.path.join(save_dir, 'best.pth')
+            best_path = os.path.join(CHECKPOINT_DIR, save_name, 'best.pth')
             torch.save(best_state, best_path)
 
         train_loss.append(avg_train_loss)
@@ -511,6 +507,12 @@ def main():
             device = args.device
         )
     print(config)
+    if args.save_name:
+        print(f'\nSaving WhiSBERT Config...')
+        save_dir = os.path.join(CHECKPOINT_DIR, args.save_name)
+        os.makedirs(save_dir, exist_ok=True)
+        config_path = os.path.join(save_dir, 'config.pth')
+        torch.save(config, config_path)
 
     print('\nLoading and Initializing Models with Config...')
     processor, whisbert, tokenizer, sbert = load_models(config, args.load_name)
@@ -545,12 +547,8 @@ def main():
     )
 
     if args.save_name:
-        print(f'\nSaving WhiSBERT Model and Config...')
-        
+        print(f'\nSaving WhiSBERT Model...')
         save_dir = os.path.join(CHECKPOINT_DIR, args.save_name)
-        config_path = os.path.join(save_dir, 'config.pth')
-        torch.save(config, config_path)
-
         best_path = os.path.join(save_dir, 'best.pth')
         last_path = os.path.join(save_dir, 'last.pth')
         torch.save(whisbert.state_dict(), last_path)

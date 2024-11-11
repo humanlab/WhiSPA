@@ -1,17 +1,21 @@
-import os, json
+import os
 import argparse
 import numpy as np
 import pandas as pd
 from mysql import connector
 
 
-DEBUG = True
-BASE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)))
-
-
 """
-python sql/fill_table.py -c ~/.my.cnf -t "feat\$sbert384\$wtc_seg_persona\$user_id" --csv /cronus_data/rrao/WhiSBERT/embeddings/wtc_all-MiniLM-L12-v2.csv
-python sql/fill_table.py -c ~/.my.cnf -t "feat\$sbert384\$hitop_seg_persona\$user_id" --csv /cronus_data/rrao/WhiSBERT/embeddings/hitop_all-MiniLM-L12-v2.csv
+python sql/fill_table.py -c ~/.my.cnf -t "feat\$sbert384\$wtc_seg_persona\$user_id" --csv /cronus_data/rrao/WhiSBERT/embeddings/all-MiniLM-L12-v2/wtc_embeddings.csv
+python sql/fill_table.py -c ~/.my.cnf -t "feat\$sbert384\$hitop_seg_persona\$user_id" --csv /cronus_data/rrao/WhiSBERT/embeddings/all-MiniLM-L12-v2/hitop_embeddings.csv
+python sql/fill_table.py -c ~/.my.cnf -t "feat\$whisper384\$wtc_seg_persona\$user_id" --csv /cronus_data/rrao/WhiSBERT/embeddings/whisper-384/wtc_embeddings.csv
+python sql/fill_table.py -c ~/.my.cnf -t "feat\$whisper384\$hitop_seg_persona\$user_id" --csv /cronus_data/rrao/WhiSBERT/embeddings/whisper-384/hitop_embeddings.csv
+python sql/fill_table.py -c ~/.my.cnf -t "feat\$whisper384_mean_cossim\$wtc_seg_persona\$user_id" --csv /cronus_data/rrao/WhiSBERT/embeddings/whisper-384_mean_cos-sim_50_512_1e-5_1e-2/wtc_embeddings.csv
+python sql/fill_table.py -c ~/.my.cnf -t "feat\$whisper384_mean_cossim\$hitop_seg_persona\$user_id" --csv /cronus_data/rrao/WhiSBERT/embeddings/whisper-384_mean_cos-sim_50_512_1e-5_1e-2/hitop_embeddings.csv
+python sql/fill_table.py -c ~/.my.cnf -t "feat\$whisper384_mean_simclr\$wtc_seg_persona\$user_id" --csv /cronus_data/rrao/WhiSBERT/embeddings/whisper-384_mean_sim-clr_50_512_1e-5_1e-2/wtc_embeddings.csv
+python sql/fill_table.py -c ~/.my.cnf -t "feat\$whisper384_mean_simclr\$hitop_seg_persona\$user_id" --csv /cronus_data/rrao/WhiSBERT/embeddings/whisper-384_mean_sim-clr_50_512_1e-5_1e-2/hitop_embeddings.csv
+python sql/fill_table.py -c ~/.my.cnf -t "feat\$whisper384_mean_nceclr\$wtc_seg_persona\$user_id" --csv /cronus_data/rrao/WhiSBERT/embeddings/whisper-384_mean_norm-temp-ce-sum_50_512_1e-5_1e-2/wtc_embeddings.csv
+python sql/fill_table.py -c ~/.my.cnf -t "feat\$whisper384_mean_nceclr\$hitop_seg_persona\$user_id" --csv /cronus_data/rrao/WhiSBERT/embeddings/whisper-384_mean_norm-temp-ce-sum_50_512_1e-5_1e-2/hitop_embeddings.csv
 """
 
 
@@ -20,7 +24,7 @@ def main():
 
     parser.add_argument("-c", "--credential", required=True, type=str, help="Specify path to credential file")
     parser.add_argument("-t", "--table_name", required=True, type=str, help="Specify the name of the SQL Table to insert to")
-    parser.add_argument("--csv", required=True, type=str, help="Specify the path to the features (must be .csv file format)")
+    parser.add_argument("--csv", required=True, type=str, help="Specify the path to the features file (must be .csv format)")
     parser.add_argument("--no_agg", action="store_true", help="Flag to disallow aggregation of features by `user_id`")
     args = parser.parse_args()
 
@@ -107,11 +111,6 @@ def driver(connection, cursor, table_name, csv_path, no_agg):
     # Close the cursor and connection
     cursor.close()
     connection.close()
-
-
-def log(msg):
-    if DEBUG:
-        print(msg)
 
 
 if __name__ == '__main__':

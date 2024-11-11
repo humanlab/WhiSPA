@@ -20,16 +20,12 @@ from data import AudioDataset, collate_inference
 
 
 """
-CUDA_VISIBLE_DEVICES=0 python code/inference.py \
---load_name whisper-384 \
+CUDA_VISIBLE_DEVICES=1 python code/inference.py \
+--load_name whisper-384_mean_norm-temp-ce-sum_50_512_1e-5_1e-2 \
 --batch_size 1024 \
 --num_workers 12 \
 --no_shuffle
 """
-
-
-os.environ["TOKENIZERS_PARALLELISM"] = "false"
-BASE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
 
 
 def load_args():
@@ -113,15 +109,20 @@ def inference(
         collate_fn=collate_inference
     )
 
-    hitop_output_filepath = os.path.join(EMBEDDINGS_DIR, f'hitop_{load_name}.csv')
-    wtc_output_filepath = os.path.join(EMBEDDINGS_DIR, f'wtc_{load_name}.csv')
-    if os.path.exists(hitop_output_filepath) or os.path.exists(wtc_output_filepath):
-        raise Exception(f'OutputError: The output filepath(s) already exist.\n\t{hitop_output_filepath}\n\t{wtc_output_filepath}')
-    else:
-        cols = ['segment_id'] + [f'f{i:03d}' for i in range(config.emb_dim)]
-        df = pd.DataFrame(columns=cols)
-        df.to_csv(hitop_output_filepath, index=False)
-        df.to_csv(wtc_output_filepath, index=False)
+    output_path = os.path.join(EMBEDDINGS_DIR, load_name)
+    os.makedirs(output_path, exist_ok=True)
+    hitop_output_filepath = os.path.join(output_path, f'hitop_embeddings.csv')
+    wtc_output_filepath = os.path.join(output_path, f'wtc_embeddings.csv')
+    assert not (os.path.exists(hitop_output_filepath) or os.path.exists(wtc_output_filepath)), (
+        f'OutputError: The output filepath(s) already exist.\n\t{hitop_output_filepath}\n\t{wtc_output_filepath}'
+    )
+    # if os.path.exists(hitop_output_filepath) or os.path.exists(wtc_output_filepath):
+    #     raise Exception(f'OutputError: The output filepath(s) already exist.\n\t{hitop_output_filepath}\n\t{wtc_output_filepath}')
+    # else:
+    cols = ['segment_id'] + [f'f{i:03d}' for i in range(config.emb_dim)]
+    df = pd.DataFrame(columns=cols)
+    df.to_csv(hitop_output_filepath, index=False)
+    df.to_csv(wtc_output_filepath, index=False)
 
     whisbert.eval()
     start_time = time.time()
