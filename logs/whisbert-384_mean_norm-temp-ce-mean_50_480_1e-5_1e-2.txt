@@ -1,0 +1,297 @@
+Preparing Model Configuration...
+{'activation_dropout': 0.1,
+ 'activation_function': 'gelu',
+ 'attention_dropout': 0.1,
+ 'batch_size': 480,
+ 'decoder_layerdrop': 0.1,
+ 'device': 'cuda',
+ 'dropout': 0.1,
+ 'emb_dim': 384,
+ 'encoder_layerdrop': 0.1,
+ 'eps': 1e-05,
+ 'learning_rate': 1e-05,
+ 'loss': 'norm_temp_ce_mean',
+ 'new_encoder_ffn_dim': 3072,
+ 'new_encoder_n_heads': 12,
+ 'new_encoder_n_layers': 12,
+ 'num_epochs': 50,
+ 'num_workers': 16,
+ 'pooling_mode': 'mean',
+ 'sbert_model_id': 'sentence-transformers/all-MiniLM-L12-v2',
+ 'shuffle': True,
+ 'tau': 0.1,
+ 'use_sbert_encoder': True,
+ 'weight_decay': 0.01,
+ 'whisper_model_id': 'openai/whisper-tiny'}
+
+Saving WhiSBERT Config...
+
+Loading and Initializing Models with Config...
+
+Available GPU IDs: [0, 1]
+	GPU 0: NVIDIA RTX A6000
+	GPU 1: NVIDIA RTX A6000
+
+
+Preprocessing AudioDataset...
+	Total dataset size (N): 726023
+	Training dataset size (N): 580818
+	Validation dataset size (N): 145205
+
+Starting Training...
+Epoch 1/50
+	Training (norm_temp_ce_mean) Loss: 4.6489
+	Validation (norm_temp_ce_mean) Loss: 3.1735
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:33:23.335745
+Epoch 2/50
+	Training (norm_temp_ce_mean) Loss: 2.5988
+	Validation (norm_temp_ce_mean) Loss: 2.3797
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:32:11.101047
+Epoch 3/50
+	Training (norm_temp_ce_mean) Loss: 2.1714
+	Validation (norm_temp_ce_mean) Loss: 2.1231
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:32:21.851577
+Epoch 4/50
+	Training (norm_temp_ce_mean) Loss: 1.9448
+	Validation (norm_temp_ce_mean) Loss: 1.9389
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:32:05.391821
+Epoch 5/50
+	Training (norm_temp_ce_mean) Loss: 1.8133
+	Validation (norm_temp_ce_mean) Loss: 1.8247
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:33:30.073414
+Epoch 6/50
+	Training (norm_temp_ce_mean) Loss: 1.7098
+	Validation (norm_temp_ce_mean) Loss: 1.7420
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:31:13.490931
+Epoch 7/50
+	Training (norm_temp_ce_mean) Loss: 1.6401
+	Validation (norm_temp_ce_mean) Loss: 1.6744
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:31:03.007881
+Epoch 8/50
+	Training (norm_temp_ce_mean) Loss: 1.5839
+	Validation (norm_temp_ce_mean) Loss: 1.6368
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:29:20.831977
+Epoch 9/50
+	Training (norm_temp_ce_mean) Loss: 1.5398
+	Validation (norm_temp_ce_mean) Loss: 1.5970
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:29:34.813747
+Epoch 10/50
+	Training (norm_temp_ce_mean) Loss: 1.5078
+	Validation (norm_temp_ce_mean) Loss: 1.5663
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:29:50.072724
+Epoch 11/50
+	Training (norm_temp_ce_mean) Loss: 1.4794
+	Validation (norm_temp_ce_mean) Loss: 1.5419
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:29:45.709883
+Epoch 12/50
+	Training (norm_temp_ce_mean) Loss: 1.4598
+	Validation (norm_temp_ce_mean) Loss: 1.5218
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:29:47.249219
+Epoch 13/50
+	Training (norm_temp_ce_mean) Loss: 1.4436
+	Validation (norm_temp_ce_mean) Loss: 1.5130
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:29:48.795037
+Epoch 14/50
+	Training (norm_temp_ce_mean) Loss: 1.4322
+	Validation (norm_temp_ce_mean) Loss: 1.5009
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:29:45.202179
+Epoch 15/50
+	Training (norm_temp_ce_mean) Loss: 1.4242
+	Validation (norm_temp_ce_mean) Loss: 1.4937
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:29:47.266584
+Epoch 16/50
+	Training (norm_temp_ce_mean) Loss: 1.4150
+	Validation (norm_temp_ce_mean) Loss: 1.4829
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:29:28.929108
+Epoch 17/50
+	Training (norm_temp_ce_mean) Loss: 1.4025
+	Validation (norm_temp_ce_mean) Loss: 1.4705
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:29:44.047724
+Epoch 18/50
+	Training (norm_temp_ce_mean) Loss: 1.3941
+	Validation (norm_temp_ce_mean) Loss: 1.4641
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:29:49.345369
+Epoch 19/50
+	Training (norm_temp_ce_mean) Loss: 1.3893
+	Validation (norm_temp_ce_mean) Loss: 1.4608
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:30:20.705100
+Epoch 20/50
+	Training (norm_temp_ce_mean) Loss: 1.3807
+	Validation (norm_temp_ce_mean) Loss: 1.4525
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:30:40.380253
+Epoch 21/50
+	Training (norm_temp_ce_mean) Loss: 1.3682
+	Validation (norm_temp_ce_mean) Loss: 1.4365
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:31:55.274566
+Epoch 22/50
+	Training (norm_temp_ce_mean) Loss: 1.3618
+	Validation (norm_temp_ce_mean) Loss: 1.4305
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:31:58.522169
+Epoch 23/50
+	Training (norm_temp_ce_mean) Loss: 1.3565
+	Validation (norm_temp_ce_mean) Loss: 1.4270
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:33:21.373122
+Epoch 24/50
+	Training (norm_temp_ce_mean) Loss: 1.3518
+	Validation (norm_temp_ce_mean) Loss: 1.4219
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:33:22.996186
+Epoch 25/50
+	Training (norm_temp_ce_mean) Loss: 1.3418
+	Validation (norm_temp_ce_mean) Loss: 1.4081
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:30:39.407420
+Epoch 26/50
+	Training (norm_temp_ce_mean) Loss: 1.3337
+	Validation (norm_temp_ce_mean) Loss: 1.4042
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:30:48.510994
+Epoch 27/50
+	Training (norm_temp_ce_mean) Loss: 1.3278
+	Validation (norm_temp_ce_mean) Loss: 1.4027
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:31:14.505326
+Epoch 28/50
+	Training (norm_temp_ce_mean) Loss: 1.3243
+	Validation (norm_temp_ce_mean) Loss: 1.3943
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:31:14.112235
+Epoch 29/50
+	Training (norm_temp_ce_mean) Loss: 1.3185
+	Validation (norm_temp_ce_mean) Loss: 1.3882
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:29:37.397223
+Epoch 30/50
+	Training (norm_temp_ce_mean) Loss: 1.3171
+	Validation (norm_temp_ce_mean) Loss: 1.3904
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:31:04.509688
+Epoch 31/50
+	Training (norm_temp_ce_mean) Loss: 1.3093
+	Validation (norm_temp_ce_mean) Loss: 1.3775
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:30:53.370517
+Epoch 32/50
+	Training (norm_temp_ce_mean) Loss: 1.2998
+	Validation (norm_temp_ce_mean) Loss: 1.3726
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:30:34.937594
+Epoch 33/50
+	Training (norm_temp_ce_mean) Loss: 1.2960
+	Validation (norm_temp_ce_mean) Loss: 1.3689
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:30:55.058618
+Epoch 34/50
+	Training (norm_temp_ce_mean) Loss: 1.2913
+	Validation (norm_temp_ce_mean) Loss: 1.3638
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:30:51.811962
+Epoch 35/50
+	Training (norm_temp_ce_mean) Loss: 1.2862
+	Validation (norm_temp_ce_mean) Loss: 1.3590
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:30:13.269525
+Epoch 36/50
+	Training (norm_temp_ce_mean) Loss: 1.2829
+	Validation (norm_temp_ce_mean) Loss: 1.3570
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:31:11.428841
+Epoch 37/50
+	Training (norm_temp_ce_mean) Loss: 1.2811
+	Validation (norm_temp_ce_mean) Loss: 1.3545
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:30:44.497001
+Epoch 38/50
+	Training (norm_temp_ce_mean) Loss: 1.2759
+	Validation (norm_temp_ce_mean) Loss: 1.3469
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:30:15.510974
+Epoch 39/50
+	Training (norm_temp_ce_mean) Loss: 1.2740
+	Validation (norm_temp_ce_mean) Loss: 1.3481
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:30:17.346720
+Epoch 40/50
+	Training (norm_temp_ce_mean) Loss: 1.2693
+	Validation (norm_temp_ce_mean) Loss: 1.3401
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:30:10.736515
+Epoch 41/50
+	Training (norm_temp_ce_mean) Loss: 1.2656
+	Validation (norm_temp_ce_mean) Loss: 1.3407
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:30:41.450537
+Epoch 42/50
+	Training (norm_temp_ce_mean) Loss: 1.2633
+	Validation (norm_temp_ce_mean) Loss: 1.3366
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:30:07.664773
+Epoch 43/50
+	Training (norm_temp_ce_mean) Loss: 1.2615
+	Validation (norm_temp_ce_mean) Loss: 1.3340
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:31:46.232993
+Epoch 44/50
+	Training (norm_temp_ce_mean) Loss: 1.2531
+	Validation (norm_temp_ce_mean) Loss: 1.3254
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:31:00.395673
+Epoch 45/50
+	Training (norm_temp_ce_mean) Loss: 1.2470
+	Validation (norm_temp_ce_mean) Loss: 1.3205
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:30:00.321096
+Epoch 46/50
+	Training (norm_temp_ce_mean) Loss: 1.2426
+	Validation (norm_temp_ce_mean) Loss: 1.3154
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:32:13.672876
+Epoch 47/50
+	Training (norm_temp_ce_mean) Loss: 1.2414
+	Validation (norm_temp_ce_mean) Loss: 1.3156
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:29:18.996548
+Epoch 48/50
+	Training (norm_temp_ce_mean) Loss: 1.2378
+	Validation (norm_temp_ce_mean) Loss: 1.3082
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:32:34.293914
+Epoch 49/50
+	Training (norm_temp_ce_mean) Loss: 1.2338
+	Validation (norm_temp_ce_mean) Loss: 1.3073
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:36:34.118380
+Epoch 50/50
+	Training (norm_temp_ce_mean) Loss: 1.2317
+	Validation (norm_temp_ce_mean) Loss: 1.3065
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:36:42.387105
+
+Saving WhiSBERT Model...
+	Done.	`/cronus_data/rrao/WhiSBERT/models/whisbert-384_mean_norm-temp-ce-mean_50_480_1e-5_1e-2/best.pth`
+
+	Done.	`/cronus_data/rrao/WhiSBERT/models/whisbert-384_mean_norm-temp-ce-mean_50_480_1e-5_1e-2/last.pth`
+

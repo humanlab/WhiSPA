@@ -20,10 +20,10 @@ from data import AudioDataset, collate_inference
 
 
 """
-CUDA_VISIBLE_DEVICES=1 python code/inference.py \
---load_name whisper-384_mean_norm-temp-ce-sum_50_512_1e-5_1e-2 \
---batch_size 1024 \
---num_workers 12 \
+CUDA_VISIBLE_DEVICES=2,3 python code/inference.py \
+--load_name whisbert-384 \
+--batch_size 2048 \
+--num_workers 16 \
 --no_shuffle
 """
 
@@ -116,9 +116,7 @@ def inference(
     assert not (os.path.exists(hitop_output_filepath) or os.path.exists(wtc_output_filepath)), (
         f'OutputError: The output filepath(s) already exist.\n\t{hitop_output_filepath}\n\t{wtc_output_filepath}'
     )
-    # if os.path.exists(hitop_output_filepath) or os.path.exists(wtc_output_filepath):
-    #     raise Exception(f'OutputError: The output filepath(s) already exist.\n\t{hitop_output_filepath}\n\t{wtc_output_filepath}')
-    # else:
+ 
     cols = ['segment_id'] + [f'f{i:03d}' for i in range(config.emb_dim)]
     df = pd.DataFrame(columns=cols)
     df.to_csv(hitop_output_filepath, index=False)

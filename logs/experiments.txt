@@ -43,12 +43,27 @@ Done.
 CUDA_VISIBLE_DEVICES=2,3 \
 python code/train.py \
 --whisper_model_id openai/whisper-tiny \
+--use_sbert_encoder \
 --pooling_mode mean \
---loss norm_temp_ce_mean \
+--loss cos_sim \
 --num_epochs 50 \
---batch_size 512 \
+--batch_size 480 \
 --num_workers 16 \
 --lr 1e-5 \
 --wd 1e-2 \
---save_name whisper-384_mean_norm-temp-ce-mean_50_512_1e-5_1e-2 \
-> logs/whisper-384_mean_norm-temp-ce-mean_50_512_1e-5_1e-2.txt
+--save_name whisbert-384_mean_cos-sim_50_480_1e-5_1e-2 \
+> logs/whisbert-384_mean_cos-sim_50_480_1e-5_1e-2.txt
+
+CUDA_VISIBLE_DEVICES=2,3 \
+python code/train.py \
+--whisper_model_id openai/whisper-tiny \
+--use_sbert_encoder \
+--pooling_mode mean \
+--loss norm_temp_ce_mean \
+--num_epochs 50 \
+--batch_size 480 \
+--num_workers 16 \
+--lr 1e-5 \
+--wd 1e-2 \
+--save_name whisbert-384_mean_norm-temp-ce-mean_50_480_1e-5_1e-2 \
+> logs/whisbert-384_mean_norm-temp-ce-mean_50_480_1e-5_1e-2.txt
