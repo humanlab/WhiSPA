@@ -20,6 +20,11 @@ python sql/fill_table.py -c ~/.my.cnf -t "feat\$whisbert384_mean_cossim\$wtc_seg
 python sql/fill_table.py -c ~/.my.cnf -t "feat\$whisbert384_mean_cossim\$hitop_seg_persona\$user_id" --csv /cronus_data/rrao/WhiSBERT/embeddings/whisbert-384_mean_cos-sim_50_480_1e-5_1e-2/hitop_embeddings.csv
 python sql/fill_table.py -c ~/.my.cnf -t "feat\$whisbert384_mean_nceclr\$wtc_seg_persona\$user_id" --csv /cronus_data/rrao/WhiSBERT/embeddings/whisbert-384_mean_norm-temp-ce-mean_50_480_1e-5_1e-2/wtc_embeddings.csv
 python sql/fill_table.py -c ~/.my.cnf -t "feat\$whisbert384_mean_nceclr\$hitop_seg_persona\$user_id" --csv /cronus_data/rrao/WhiSBERT/embeddings/whisbert-384_mean_norm-temp-ce-mean_50_480_1e-5_1e-2/hitop_embeddings.csv
+
+python sql/fill_table.py -c ~/.my.cnf -t "feat\$sbert768\$wtc_seg_persona\$user_id" --csv /cronus_data/rrao/WhiSBERT/embeddings/all-mpnet-base-v2/wtc_embeddings.csv
+python sql/fill_table.py -c ~/.my.cnf -t "feat\$sbert768\$hitop_seg_persona\$user_id" --csv /cronus_data/rrao/WhiSBERT/embeddings/all-mpnet-base-v2/hitop_embeddings.csv
+python sql/fill_table.py -c ~/.my.cnf -t "feat\$whisper768\$wtc_seg_persona\$user_id" --csv /cronus_data/rrao/WhiSBERT/embeddings/whisper-768/wtc_embeddings.csv
+python sql/fill_table.py -c ~/.my.cnf -t "feat\$whisper768\$hitop_seg_persona\$user_id" --csv /cronus_data/rrao/WhiSBERT/embeddings/whisper-768/hitop_embeddings.csv
 """
 
 

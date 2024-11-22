@@ -20,9 +20,9 @@ from data import AudioDataset, collate_inference
 
 
 """
-CUDA_VISIBLE_DEVICES=2,3 python code/inference.py \
---load_name whisbert-384 \
---batch_size 2048 \
+CUDA_VISIBLE_DEVICES=1 python code/inference.py \
+--load_name whisper-768 \
+--batch_size 256 \
 --num_workers 16 \
 --no_shuffle
 """

@@ -1,0 +1,147 @@
+Preparing Model Configuration...
+{'batch_size': 100,
+ 'device': 'cuda',
+ 'emb_dim': 768,
+ 'learning_rate': 1e-05,
+ 'loss': 'cos_sim',
+ 'n_new_dims': 0,
+ 'num_epochs': 50,
+ 'num_workers': 16,
+ 'pooling_mode': 'mean',
+ 'sbert_model_id': 'sentence-transformers/all-mpnet-base-v2',
+ 'shuffle': True,
+ 'tau': 0.1,
+ 'use_sbert_encoder': False,
+ 'weight_decay': 0.01,
+ 'whisper_model_id': 'openai/whisper-small'}
+
+Saving WhiSBERT Config...
+
+Loading and Initializing Models with Config...
+
+Available GPU IDs: [0, 1]
+	GPU 0: NVIDIA RTX A6000
+	GPU 1: NVIDIA RTX A6000
+
+
+Preprocessing AudioDataset...
+	Total dataset size (N): 726023
+	Training dataset size (N): 580818
+	Validation dataset size (N): 145205
+
+Starting Training...
+Epoch 1/50
+	Training (cos_sim) Loss: 0.5523
+	Validation (cos_sim) Loss: 0.4987
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 2:24:56.751670
+Epoch 2/50
+	Training (cos_sim) Loss: 0.4893
+	Validation (cos_sim) Loss: 0.4832
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 2:25:02.043201
+Epoch 3/50
+	Training (cos_sim) Loss: 0.4742
+	Validation (cos_sim) Loss: 0.4682
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 2:25:10.696047
+Epoch 4/50
+	Training (cos_sim) Loss: 0.4604
+	Validation (cos_sim) Loss: 0.4537
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 2:25:07.720576
+Epoch 5/50
+	Training (cos_sim) Loss: 0.4482
+	Validation (cos_sim) Loss: 0.4436
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 2:25:05.128682
+Epoch 6/50
+	Training (cos_sim) Loss: 0.4379
+	Validation (cos_sim) Loss: 0.4332
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 2:25:32.755874
+Epoch 7/50
+	Training (cos_sim) Loss: 0.4283
+	Validation (cos_sim) Loss: 0.4247
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 2:25:06.641984
+Epoch 8/50
+	Training (cos_sim) Loss: 0.4202
+	Validation (cos_sim) Loss: 0.4170
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 2:24:54.288934
+Epoch 9/50
+	Training (cos_sim) Loss: 0.4126
+	Validation (cos_sim) Loss: 0.4098
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 2:26:08.944349
+Epoch 10/50
+	Training (cos_sim) Loss: 0.4055
+	Validation (cos_sim) Loss: 0.4031
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 2:25:36.040404
+Epoch 11/50
+	Training (cos_sim) Loss: 0.3991
+	Validation (cos_sim) Loss: 0.3972
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 2:25:37.997847
+Epoch 12/50
+	Training (cos_sim) Loss: 0.3935
+	Validation (cos_sim) Loss: 0.3917
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 2:26:29.022864
+Epoch 13/50
+	Training (cos_sim) Loss: 0.3876
+	Validation (cos_sim) Loss: 0.3853
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 2:26:30.788658
+Epoch 14/50
+	Training (cos_sim) Loss: 0.3821
+	Validation (cos_sim) Loss: 0.3808
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 2:25:23.992014
+Epoch 15/50
+	Training (cos_sim) Loss: 0.3776
+	Validation (cos_sim) Loss: 0.3759
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 2:25:06.886864
+Epoch 16/50
+	Training (cos_sim) Loss: 0.3726
+	Validation (cos_sim) Loss: 0.3718
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 2:24:51.853021
+Epoch 17/50
+	Training (cos_sim) Loss: 0.3682
+	Validation (cos_sim) Loss: 0.3673
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 2:25:04.146199
+Epoch 18/50
+	Training (cos_sim) Loss: 0.3645
+	Validation (cos_sim) Loss: 0.3640
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 2:25:48.618068
+Epoch 19/50
+	Training (cos_sim) Loss: 0.3615
+	Validation (cos_sim) Loss: 0.3613
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 2:26:27.654212
+Epoch 20/50
+	Training (cos_sim) Loss: 0.3575
+	Validation (cos_sim) Loss: 0.3567
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 2:26:33.504981
+Epoch 21/50
+	Training (cos_sim) Loss: 0.3537
+	Validation (cos_sim) Loss: 0.3529
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 2:27:22.925865
+Epoch 22/50
+	Training (cos_sim) Loss: 0.3497
+	Validation (cos_sim) Loss: 0.3472
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 2:26:49.034672
+Epoch 23/50
+	Training (cos_sim) Loss: 0.3419
+	Validation (cos_sim) Loss: 0.3409
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 2:25:56.258875

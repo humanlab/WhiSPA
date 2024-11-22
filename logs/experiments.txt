@@ -67,3 +67,18 @@ python code/train.py \
 --wd 1e-2 \
 --save_name whisbert-384_mean_norm-temp-ce-mean_50_480_1e-5_1e-2 \
 > logs/whisbert-384_mean_norm-temp-ce-mean_50_480_1e-5_1e-2.txt
+
+
+# 768 EMBEDDING DIMENSIONS
+CUDA_VISIBLE_DEVICES=2,3 \
+python code/train.py \
+--whisper_model_id openai/whisper-small \
+--pooling_mode mean \
+--loss cos_sim \
+--num_epochs 50 \
+--batch_size 100 \
+--num_workers 16 \
+--lr 1e-5 \
+--wd 1e-2 \
+--save_name whisper-768_mean_cos-sim_50_512_1e-5_1e-2 \
+> logs/whisper-768_mean_cos-sim_50_512_1e-5_1e-2.txt

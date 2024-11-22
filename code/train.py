@@ -127,76 +127,86 @@ def load_args():
         help='Specify the type of loss criteria during training'
     )
     parser.add_argument(
-        '--use_sbert_encoder',
-        action='store_true',
-        help='Specify whether to use the additional encoder layers for WhiSBERT'
-    )
-    parser.add_argument(
-        "--new_encoder_n_layers",
-        default=12,
-        type=int,
-        help="The number of new encoder layers for WhiSBERT"
-    )
-    parser.add_argument(
-        "--new_encoder_n_heads",
-        default=12,
-        type=int,
-        help="The number of new encoder attention heads for WhiSBERT"
-    )
-    parser.add_argument(
-        "--new_encoder_ffn_dim",
-        default=3072,
-        type=int,
-        help="The number of new encoder FFN dimensions for WhiSBERT"
-    )
-    parser.add_argument(
-        '--activation_function',
-        default='gelu',
-        type=str,
-        help='The activation function for WhiSBERT [Default: `GELU`]'
-    )
-    parser.add_argument(
         "--tau",
         default=0.1,
         type=float,
         help="The temperature value for the contrastive loss. Note this will only be applied when using: `Normalized Temperature-Scaled Cross Entropy Loss`"
     )
     parser.add_argument(
-        "--eps",
-        default=1e-5,
-        type=float,
-        help="The epsilon value for LayerNorm for WhiSBERT"
+        '--use_sbert_encoder',
+        action='store_true',
+        help='Specify whether to use the additional encoder layers for WhiSBERT'
     )
     parser.add_argument(
-        "--dropout",
-        default=0.1,
-        type=float,
-        help="The dropout for WhiSBERT"
+        "--n_new_dims",
+        default=0,
+        choices=[
+            0,
+            7,
+        ],
+        type=int,
+        help="The number of additional dimensions to be added to WhiSBERT's transformer weights"
     )
-    parser.add_argument(
-        "--encoder_layerdrop",
-        default=0.1,
-        type=float,
-        help="The encoder layer dropout for WhiSBERT"
-    )
-    parser.add_argument(
-        "--decoder_layerdrop",
-        default=0.1,
-        type=float,
-        help="The decoder layer dropout for WhiSBERT"
-    )
-    parser.add_argument(
-        "--attention_dropout",
-        default=0.1,
-        type=float,
-        help="The attention dropout for WhiSBERT"
-    )
-    parser.add_argument(
-        "--activation_dropout",
-        default=0.1,
-        type=float,
-        help="The activation dropout for WhiSBERT"
-    )
+    # parser.add_argument(
+    #     "--new_encoder_n_layers",
+    #     default=12,
+    #     type=int,
+    #     help="The number of new encoder layers for WhiSBERT"
+    # )
+    # parser.add_argument(
+    #     "--new_encoder_n_heads",
+    #     default=12,
+    #     type=int,
+    #     help="The number of new encoder attention heads for WhiSBERT"
+    # )
+    # parser.add_argument(
+    #     "--new_encoder_ffn_dim",
+    #     default=3072,
+    #     type=int,
+    #     help="The number of new encoder FFN dimensions for WhiSBERT"
+    # )
+    # parser.add_argument(
+    #     '--activation_function',
+    #     default='gelu',
+    #     type=str,
+    #     help='The activation function for WhiSBERT [Default: `GELU`]'
+    # )
+    # parser.add_argument(
+    #     "--eps",
+    #     default=1e-5,
+    #     type=float,
+    #     help="The epsilon value for LayerNorm for WhiSBERT"
+    # )
+    # parser.add_argument(
+    #     "--dropout",
+    #     default=0.1,
+    #     type=float,
+    #     help="The dropout for WhiSBERT"
+    # )
+    # parser.add_argument(
+    #     "--encoder_layerdrop",
+    #     default=0.1,
+    #     type=float,
+    #     help="The encoder layer dropout for WhiSBERT"
+    # )
+    # parser.add_argument(
+    #     "--decoder_layerdrop",
+    #     default=0.1,
+    #     type=float,
+    #     help="The decoder layer dropout for WhiSBERT"
+    # )
+    # parser.add_argument(
+    #     "--attention_dropout",
+    #     default=0.1,
+    #     type=float,
+    #     help="The attention dropout for WhiSBERT"
+    # )
+    # parser.add_argument(
+    #     "--activation_dropout",
+    #     default=0.1,
+    #     type=float,
+    #     help="The activation dropout for WhiSBERT"
+    # )
     return parser.parse_args()
 
 
@@ -486,18 +496,19 @@ def main():
             whisper_model_id = args.whisper_model_id,
             pooling_mode = args.pooling_mode,
             loss = args.loss,
-            use_sbert_encoder = args.use_sbert_encoder,
-            new_encoder_n_layers = args.new_encoder_n_layers,
-            new_encoder_n_heads = args.new_encoder_n_heads,
-            new_encoder_ffn_dim = args.new_encoder_ffn_dim,
-            activation_function = args.activation_function,
             tau = args.tau,
-            eps = args.eps,
-            dropout = args.dropout,
-            encoder_layerdrop = args.encoder_layerdrop,
-            decoder_layerdrop = args.decoder_layerdrop,
-            attention_dropout = args.attention_dropout,
-            activation_dropout = args.activation_dropout,
+            use_sbert_encoder = args.use_sbert_encoder,
+            n_new_dims= args.n_new_dims,
+            # new_encoder_n_layers = args.new_encoder_n_layers,
+            # new_encoder_n_heads = args.new_encoder_n_heads,
+            # new_encoder_ffn_dim = args.new_encoder_ffn_dim,
+            # activation_function = args.activation_function,
+            # eps = args.eps,
+            # dropout = args.dropout,
+            # encoder_layerdrop = args.encoder_layerdrop,
+            # decoder_layerdrop = args.decoder_layerdrop,
+            # attention_dropout = args.attention_dropout,
+            # activation_dropout = args.activation_dropout,
             batch_size = args.batch_size,
             num_workers = args.num_workers,
             num_epochs = args.num_epochs,
