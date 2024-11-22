@@ -220,12 +220,8 @@ def load_models(config, load_name):
     whisbert = WhiSBERTModel(config).to(config.device)
 
     # Load the pre-trained SentenceTransformer models
-    if config.sbert_model_id == 'sentence-transformers/distiluse-base-multilingual-cased-v1':
-        tokenizer = None
-        sbert = SentenceTransformer(config.sbert_model_id, cache_folder=CACHE_DIR, device=config.device)
-    else:
-        tokenizer = AutoTokenizer.from_pretrained(config.sbert_model_id, cache_dir=CACHE_DIR, TOKENIZERS_PARALLELISM=False)
-        sbert = AutoModel.from_pretrained(config.sbert_model_id, cache_dir=CACHE_DIR).to(config.device)
+    tokenizer = AutoTokenizer.from_pretrained(config.sbert_model_id, cache_dir=CACHE_DIR, TOKENIZERS_PARALLELISM=False)
+    sbert = AutoModel.from_pretrained(config.sbert_model_id, cache_dir=CACHE_DIR).to(config.device)
 
     if config.device == 'cuda':
         if torch.cuda.is_available():
@@ -331,28 +327,26 @@ def train(
 
         for batch in tqdm(train_loader, desc=f"Epoch {epoch + 1}/{config.num_epochs} - Training"):
 
-            if config.sbert_model_id != 'sentence-transformers/distiluse-base-multilingual-cased-v1':
-                # SBERT-based tokenization
-                sbert_inputs = tokenizer(
-                    batch['message'],
-                    padding=True,
-                    truncation=True,
-                    return_tensors='pt'
-                ).to(config.device)
+            # SBERT-based tokenization
+            sbert_inputs = tokenizer(
+                batch['message'],
+                padding=True,
+                truncation=True,
+                return_tensors='pt'
+            ).to(config.device)
             
             # Forward pass
             with torch.amp.autocast(config.device):
 
                 # Get SBERT's embedding
-                if config.sbert_model_id != 'sentence-transformers/distiluse-base-multilingual-cased-v1':
-                    with torch.no_grad():
-                        sbert_embs = sbert(**sbert_inputs).last_hidden_state
-                    sbert_embs = mean_pooling(sbert_embs, sbert_inputs['attention_mask'])
-                else:
-                    if isinstance(sbert, torch.nn.DataParallel):
-                        sbert_embs = torch.from_numpy(sbert.module.encode(batch['message']))
-                    else:
-                        sbert_embs = torch.from_numpy(sbert.encode(batch['message']))
+                with torch.no_grad():
+                    sbert_embs = sbert(**sbert_inputs).last_hidden_state
+                sbert_embs = mean_pooling(sbert_embs, sbert_inputs['attention_mask'])
+                if config.n_new_dims > 0:
+                    sbert_embs = torch.cat([
+                        sbert_embs,
+                        batch['outcomes'].to(config.device)
+                    ], dim=1)
 
                 # Whisper-based tokenization
                 with torch.no_grad():
@@ -392,27 +386,25 @@ def train(
         with torch.no_grad():
             for batch in tqdm(val_loader, desc=f"Epoch {epoch + 1}/{config.num_epochs} - Validation"):
                 
-                if config.sbert_model_id != 'sentence-transformers/distiluse-base-multilingual-cased-v1':
-                    # SBERT-based tokenization
-                    sbert_inputs = tokenizer(
-                        batch['message'],
-                        padding=True,
-                        truncation=True,
-                        return_tensors='pt'
-                    ).to(config.device)
+                # SBERT-based tokenization
+                sbert_inputs = tokenizer(
+                    batch['message'],
+                    padding=True,
+                    truncation=True,
+                    return_tensors='pt'
+                ).to(config.device)
                 
                 # Forward pass
                 with torch.amp.autocast(config.device):
 
                     # Get SBERT's embedding
-                    if config.sbert_model_id != 'sentence-transformers/distiluse-base-multilingual-cased-v1':
-                        sbert_embs = sbert(**sbert_inputs).last_hidden_state
-                        sbert_embs = mean_pooling(sbert_embs, sbert_inputs['attention_mask'])
-                    else:
-                        if isinstance(sbert, torch.nn.DataParallel):
-                            sbert_embs = torch.from_numpy(sbert.module.encode(batch['message']))
-                        else:
-                            sbert_embs = torch.from_numpy(sbert.encode(batch['message']))
+                    sbert_embs = sbert(**sbert_inputs).last_hidden_state
+                    sbert_embs = mean_pooling(sbert_embs, sbert_inputs['attention_mask'])
+                    if config.n_new_dims > 0:
+                        sbert_embs = torch.cat([
+                            sbert_embs,
+                            batch['outcomes'].to(config.device)
+                        ], dim=1)
 
                     # Whisper-based tokenization
                     outputs = processor.tokenizer(

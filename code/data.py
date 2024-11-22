@@ -1,4 +1,5 @@
 import os
+import numpy as np
 import pandas as pd
 import torch, torchaudio
 
@@ -10,10 +11,19 @@ WTC_AUDIO_DIR = '/cronus_data/wtc_clinic/Clinic_Audio_Segments/'
 class AudioDataset(torch.utils.data.Dataset):
     
     def __init__(self, processor, mode='train'):
-        self.hitop_segments_df = pd.read_csv('/cronus_data/rrao/hitop/segment_outcomes.csv')
-        self.wtc_segments_df = pd.read_csv('/cronus_data/rrao/wtc_clinic/segment_outcomes.csv')
+        self.hitop_segments_df = pd.read_csv('/cronus_data/rrao/hitop/segment_outcomes.csv').dropna()
+        self.wtc_segments_df = pd.read_csv('/cronus_data/rrao/wtc_clinic/segment_outcomes.csv').dropna()
         self.processor = processor
         self.mode = mode
+
+        if mode == 'train':
+            for feat in ['valence', 'arousal', 'ope', 'agr', 'ext', 'con', 'neu']:
+                wtc_data = np.concatenate([self.wtc_segments_df[feat].to_numpy(), self.wtc_segments_df[feat].to_numpy()])
+                wtc_min, wtc_max = wtc_data.min(), wtc_data.max()
+                self.wtc_segments_df[feat] = 2 * ((self.wtc_segments_df[feat] - wtc_min) / (wtc_max - wtc_min)) - 1
+                hitop_data = np.concatenate([self.hitop_segments_df[feat].to_numpy(), self.hitop_segments_df[feat].to_numpy()])
+                hitop_min, hitop_max = hitop_data.min(), hitop_data.max()
+                self.hitop_segments_df[feat] = 2 * ((self.hitop_segments_df[feat] - hitop_min) / (hitop_max - hitop_min)) - 1
 
     def __len__(self):
         return len(self.hitop_segments_df) + len(self.wtc_segments_df)
@@ -33,11 +43,11 @@ class AudioDataset(torch.utils.data.Dataset):
         audio_inputs = preprocess_audio(self.processor, audio_path)
         message = df.iloc[i]['segment_message']
         if self.mode == 'train':
-            return audio_inputs, message
+            return audio_inputs, message, torch.from_numpy(df.iloc[0][4:].to_numpy(dtype=np.float32)).unsqueeze(0)
         elif self.mode == 'inference':
             return dataset_name, df.iloc[i]['segment_id'], audio_inputs, message
         else:
-            return
+            return None
 
 
 def preprocess_audio(processor, audio_path):
@@ -54,8 +64,9 @@ def preprocess_audio(processor, audio_path):
 
 def collate_train(batch):
     return {
-        'audio_inputs': torch.cat([a for a, _ in batch], dim=0),
-        'message': [m for _, m  in batch]
+        'audio_inputs': torch.cat([a for a, _, _ in batch], dim=0),
+        'message': [m for _, m, _  in batch],
+        'outcomes': torch.cat([o for _, _, o in batch], dim=0)
     }
 
 

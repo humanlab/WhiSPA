@@ -23,11 +23,6 @@ class WhiSBERTModel(torch.nn.Module):
             cache_dir=CACHE_DIR,
         )
 
-        if config.n_new_dims > 0:
-            self.expand_model()
-
-        self.whisper_model.to(config.device)
-
         # Use HuggingFace library for:
         # - "sentence-transformers/all-MiniLM-L12-v2"
         # - "sentence-transformers/all-mpnet-base-v2"
@@ -36,11 +31,17 @@ class WhiSBERTModel(torch.nn.Module):
             cache_dir=CACHE_DIR
         )
 
-        self.linear = self.sbert_model.pooler.dense.to(config.device)
-        self.activation = self.sbert_model.pooler.activation.to(config.device)
-
         if config.use_sbert_encoder:
             self.sbert_encoder = self.sbert_model.encoder.to(config.device)
+
+        if config.n_new_dims > 0:
+            # self.expand_model()
+            # SBERT POOLER LINEAR EXPANSION
+            self.sbert_model.pooler.dense = expand_linear_layer(self.sbert_model.pooler.dense, added_out_features=self.config.n_new_dims)
+
+        self.whisper_model.to(config.device)
+        self.linear = self.sbert_model.pooler.dense.to(config.device)
+        self.activation = self.sbert_model.pooler.activation.to(config.device)
     
 
     def expand_model(self):
