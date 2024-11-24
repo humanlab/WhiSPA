@@ -10,8 +10,13 @@ BASE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)))
 
 
 """
-python sql/csv2sql.py -c ~/.my.cnf -t "wtc_segment_persona" --csv /cronus_data/rrao/wtc_clinic/segment_outcomes.csv
-python sql/csv2sql.py -c ~/.my.cnf -t "hitop_segment_persona" --csv /cronus_data/rrao/hitop/segment_outcomes.csv
+python sql/csv2sql.py -c ~/.my.cnf -t "wtc_aad" --csv code/aad_wtc.csv
+python sql/csv2sql.py -c ~/.my.cnf -t "hitop_aad" --csv code/aad_hitop.csv
+python sql/csv2sql.py -c ~/.my.cnf -t "wtc_uaad" --csv code/uaad_wtc.csv
+python sql/csv2sql.py -c ~/.my.cnf -t "hitop_uaad" --csv code/uaad_hitop.csv
+
+python sql/csv2sql.py -c ~/.my.cnf -t "wtc_segment_persona" --csv /cronus_data/rrao/wtc_clinic/seg_persona.csv
+python sql/csv2sql.py -c ~/.my.cnf -t "hitop_segment_persona" --csv /cronus_data/rrao/hitop/seg_persona.csv
 python sql/csv2sql.py -c ~/.my.cnf -t "wtc_user_persona" --csv /cronus_data/rrao/wtc_clinic/user_agg_outcomes.csv
 python sql/csv2sql.py -c ~/.my.cnf -t "hitop_user_persona" --csv /cronus_data/rrao/hitop/user_agg_outcomes.csv
 """
@@ -66,7 +71,7 @@ def map_dtype_to_mysql(dtype):
 
 def driver(connection, cursor, table_name, csv_path):
     df = pd.read_csv(csv_path, encoding='utf-8').dropna().reset_index(drop=True)
-    # df['segment_message'] = df['segment_message'].apply(lambda x: re.sub(r'[^\x00-\x7F]+', '', x) if isinstance(x, str) else x)
+    # df['message'] = df['message'].apply(lambda x: re.sub(r'[^\x00-\x7F]+', '', x) if isinstance(x, str) else x)
 
     # Dynamically create SQL columns based on DataFrame dtypes
     columns = []
@@ -76,9 +81,9 @@ def driver(connection, cursor, table_name, csv_path):
                 mysql_type = 'INT'
             else:
                 mysql_type = 'VARCHAR(24)'
-        elif col_name == 'segment_id':
+        elif col_name == 'message_id':
             mysql_type = 'VARCHAR(24)'
-        elif col_name == 'segment_filename':
+        elif col_name == 'filename':
             mysql_type = 'VARCHAR(100)'
         else:
             mysql_type = map_dtype_to_mysql(dtype)

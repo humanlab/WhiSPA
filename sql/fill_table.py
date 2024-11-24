@@ -64,10 +64,10 @@ def get_sql_credentials(filename):
 
 def driver(connection, cursor, table_name, csv_path, no_agg):
     if os.path.basename(csv_path).startswith('hitop'):
-        segments_path = '/cronus_data/rrao/hitop/segment_outcomes.csv'
+        segments_path = '/cronus_data/rrao/hitop/seg_persona.csv'
         group_id_dtype = 'VARCHAR(24)'
     elif os.path.basename(csv_path).startswith('wtc'):
-        segments_path = '/cronus_data/rrao/wtc_clinic/segment_outcomes.csv'
+        segments_path = '/cronus_data/rrao/wtc_clinic/seg_persona.csv'
         group_id_dtype = 'VARCHAR(24)' if no_agg else 'INT'
     try:
         create_query = f"""
@@ -93,13 +93,13 @@ def driver(connection, cursor, table_name, csv_path, no_agg):
         VALUES (%s, %s, %s, %s)
     """
 
-    df = pd.read_csv(segments_path)[['user_id', 'segment_id']].merge(pd.read_csv(csv_path), on='segment_id', how='left')
+    df = pd.read_csv(segments_path)[['user_id', 'message_id']].merge(pd.read_csv(csv_path), on='message_id', how='left')
 
     if no_agg:
         for idx, row in df.iterrows():
-            print(f'[{idx + 1}/{len(df)}]\tsegment_id: {row["segment_id"]}')
+            print(f'[{idx + 1}/{len(df)}]\tmessage_id: {row["message_id"]}')
             for feat_name, value in row[2:].items():
-                values = (row['segment_id'], feat_name, value, value)
+                values = (row['message_id'], feat_name, value, value)
                 cursor.execute(insert_query, values)
     else:
         user_ids = np.unique(df['user_id'])

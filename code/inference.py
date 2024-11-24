@@ -20,9 +20,9 @@ from data import AudioDataset, collate_inference
 
 
 """
-CUDA_VISIBLE_DEVICES=1 python code/inference.py \
---load_name whisper-768 \
---batch_size 256 \
+CUDA_VISIBLE_DEVICES=1,2,3 python code/inference.py \
+--load_name whispa-384_mean_cos-sim_50_600_1e-5_1e-2 \
+--batch_size 3096 \
 --num_workers 16 \
 --no_shuffle
 """
@@ -117,7 +117,7 @@ def inference(
         f'OutputError: The output filepath(s) already exist.\n\t{hitop_output_filepath}\n\t{wtc_output_filepath}'
     )
  
-    cols = ['segment_id'] + [f'f{i:03d}' for i in range(config.emb_dim)]
+    cols = ['message_id'] + [f'f{i:03d}' for i in range(config.emb_dim + config.n_new_dim)]
     df = pd.DataFrame(columns=cols)
     df.to_csv(hitop_output_filepath, index=False)
     df.to_csv(wtc_output_filepath, index=False)
@@ -144,12 +144,12 @@ def inference(
             )
             whis_embs = F.normalize(whis_embs, p=2, dim=1)
 
-            for s_idx, segment_id in enumerate(batch['segment_id']):
-                emb = whis_embs[s_idx].cpu().numpy().tolist()
-                df = pd.DataFrame([[segment_id] + emb], columns=cols)
-                if batch['dataset_name'][s_idx] == 'hitop':
+            for m_idx, message_id in enumerate(batch['message_id']):
+                emb = whis_embs[m_idx].cpu().numpy().tolist()
+                df = pd.DataFrame([[message_id] + emb], columns=cols)
+                if batch['dataset_name'][m_idx] == 'hitop':
                     df.to_csv(hitop_output_filepath, mode='a', header=False, index=False)
-                elif batch['dataset_name'][s_idx] == 'wtc':
+                elif batch['dataset_name'][m_idx] == 'wtc':
                     df.to_csv(wtc_output_filepath, mode='a', header=False, index=False)
 
     elapsed_time = timedelta(seconds=time.time() - start_time)

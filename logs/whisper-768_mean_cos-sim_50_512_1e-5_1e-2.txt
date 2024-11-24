@@ -150,3 +150,23 @@ Epoch 24/50
 	Validation (cos_sim) Loss: 0.3381
 	Learning Rate: 1e-05
 	Epoch Elapsed Time: 2:27:20.860953
+Epoch 25/50
+	Training (cos_sim) Loss: 0.3353
+	Validation (cos_sim) Loss: 0.3355
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 2:26:53.318457
+Epoch 26/50
+	Training (cos_sim) Loss: 0.3328
+	Validation (cos_sim) Loss: 0.3332
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 2:25:10.780695
+Epoch 27/50
+	Training (cos_sim) Loss: 0.3303
+	Validation (cos_sim) Loss: 0.3306
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 2:25:12.611897
+Epoch 28/50
+	Training (cos_sim) Loss: 0.3280
+	Validation (cos_sim) Loss: 0.3285
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 2:26:16.504808

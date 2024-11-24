@@ -11,13 +11,14 @@ WTC_AUDIO_DIR = '/cronus_data/wtc_clinic/Clinic_Audio_Segments/'
 class AudioDataset(torch.utils.data.Dataset):
     
     def __init__(self, processor, mode='train'):
-        self.hitop_segments_df = pd.read_csv('/cronus_data/rrao/hitop/segment_outcomes.csv').dropna()
-        self.wtc_segments_df = pd.read_csv('/cronus_data/rrao/wtc_clinic/segment_outcomes.csv').dropna()
+        self.hitop_segments_df = pd.read_csv('/cronus_data/rrao/hitop/seg_persona.csv')
+        self.wtc_segments_df = pd.read_csv('/cronus_data/rrao/wtc_clinic/seg_persona.csv')
         self.processor = processor
         self.mode = mode
 
+        # Normalize Affect, Personality, Mental Health Scores
         if mode == 'train':
-            for feat in ['valence', 'arousal', 'ope', 'agr', 'ext', 'con', 'neu']:
+            for feat in ['valence', 'arousal', 'ope', 'agr', 'ext', 'con', 'neu', 'ang', 'anx', 'dep', 'ang_norm', 'anx_norm', 'dep_norm']:
                 wtc_data = np.concatenate([self.wtc_segments_df[feat].to_numpy(), self.wtc_segments_df[feat].to_numpy()])
                 wtc_min, wtc_max = wtc_data.min(), wtc_data.max()
                 self.wtc_segments_df[feat] = 2 * ((self.wtc_segments_df[feat] - wtc_min) / (wtc_max - wtc_min)) - 1
@@ -39,13 +40,13 @@ class AudioDataset(torch.utils.data.Dataset):
             df = self.wtc_segments_df
             dataset_name = 'wtc'
         
-        audio_path = os.path.join(audio_dir, df.iloc[i]['segment_filename'])
+        audio_path = os.path.join(audio_dir, df.iloc[i]['filename'])
         audio_inputs = preprocess_audio(self.processor, audio_path)
-        message = df.iloc[i]['segment_message']
+        message = df.iloc[i]['message']
         if self.mode == 'train':
             return audio_inputs, message, torch.from_numpy(df.iloc[0][4:].to_numpy(dtype=np.float32)).unsqueeze(0)
         elif self.mode == 'inference':
-            return dataset_name, df.iloc[i]['segment_id'], audio_inputs, message
+            return dataset_name, df.iloc[i]['message_id'], audio_inputs, message
         else:
             return None
 
@@ -73,7 +74,7 @@ def collate_train(batch):
 def collate_inference(batch):
     return {
         'dataset_name': [d for d, _, _, _ in batch],
-        'segment_id': [i for _, i, _, _ in batch],
+        'message_id': [i for _, i, _, _ in batch],
         'audio_inputs': torch.cat([a for _, _, a, _ in batch], dim=0),
         'message': [m for _, _, _, m  in batch]
     }
