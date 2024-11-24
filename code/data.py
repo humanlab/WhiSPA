@@ -18,7 +18,7 @@ class AudioDataset(torch.utils.data.Dataset):
 
         # Normalize Affect, Personality, Mental Health Scores
         if mode == 'train':
-            for feat in ['valence', 'arousal', 'ope', 'agr', 'ext', 'con', 'neu', 'ang', 'anx', 'dep', 'ang_norm', 'anx_norm', 'dep_norm']:
+            for feat in ['valence', 'arousal', 'ope', 'agr', 'ext', 'con', 'neu', 'ang_norm', 'anx_norm', 'dep_norm']:
                 wtc_data = np.concatenate([self.wtc_segments_df[feat].to_numpy(), self.wtc_segments_df[feat].to_numpy()])
                 wtc_min, wtc_max = wtc_data.min(), wtc_data.max()
                 self.wtc_segments_df[feat] = 2 * ((self.wtc_segments_df[feat] - wtc_min) / (wtc_max - wtc_min)) - 1

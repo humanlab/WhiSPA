@@ -142,7 +142,7 @@ def load_args():
         default=0,
         choices=[
             0,
-            13,
+            10,
         ],
         type=int,
         help="The number of additional dimensions to be added to WhiSBERT's transformer weights"

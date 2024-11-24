@@ -84,19 +84,25 @@ Done.
 
 ## WhisPA: Training Command Logs
 ```bash
-CUDA_VISIBLE_DEVICES=2,3 \
+CUDA_VISIBLE_DEVICES=1,2,3 \
 python code/train.py \
 --whisper_model_id openai/whisper-tiny \
---n_new_dims 13 \
+--n_new_dims 10 \
 --pooling_mode mean \
 --loss cos_sim \
 --num_epochs 50 \
---batch_size 600 \
+--batch_size 900 \
 --num_workers 16 \
 --lr 1e-5 \
 --wd 1e-2 \
---save_name whispa-384_mean_cos-sim_50_600_1e-5_1e-2 \
-> logs/whispa-384_mean_cos-sim_50_600_1e-5_1e-2.txt
+--save_name whispa-384_mean_cos-sim_50_900_1e-5_1e-2 \
+> logs/whispa-384_mean_cos-sim_50_900_1e-5_1e-2.txt \
+&& CUDA_VISIBLE_DEVICES=1,2,3 \
+python code/inference.py \
+--load_name whispa-384_mean_cos-sim_50_900_1e-5_1e-2 \
+--batch_size 3096 \
+--num_workers 16 \
+--no_shuffle
 ```
 Done.
 
@@ -104,7 +110,7 @@ Done.
 CUDA_VISIBLE_DEVICES=1,2,3 \
 python code/train.py \
 --whisper_model_id openai/whisper-tiny \
---n_new_dims 13 \
+--n_new_dims 10 \
 --pooling_mode mean \
 --loss norm_temp_ce_sum \
 --num_epochs 50 \
@@ -113,7 +119,13 @@ python code/train.py \
 --lr 1e-5 \
 --wd 1e-2 \
 --save_name whispa-384_mean_nce-sum_50_900_1e-5_1e-2 \
-> logs/whispa-384_mean_nce-sum_50_900_1e-5_1e-2.txt
+> logs/whispa-384_mean_nce-sum_50_900_1e-5_1e-2.txt \
+&& CUDA_VISIBLE_DEVICES=1,2,3 \
+python code/inference.py \
+--load_name whispa-384_mean_nce-sum_50_900_1e-5_1e-2 \
+--batch_size 3096 \
+--num_workers 16 \
+--no_shuffle
 ```
 In Progress.
 
