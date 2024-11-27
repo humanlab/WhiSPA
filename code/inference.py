@@ -21,7 +21,7 @@ from data import AudioDataset, collate_inference
 
 """
 CUDA_VISIBLE_DEVICES=1,2,3 python code/inference.py \
---load_name whispa-384_mean_cos-sim_50_600_1e-5_1e-2 \
+--load_name whispa-384_mean_cos-sim_50_900_1e-5_1e-2 \
 --batch_size 3096 \
 --num_workers 16 \
 --no_shuffle
@@ -137,12 +137,14 @@ def inference(
                 ).to(config.device)
 
             # Get WhiSBERT's MEAN/LAST token
-            whis_embs = whisbert(
+            whis_embs, pa_embs = whisbert(
                 batch['audio_inputs'].to(config.device),
                 outputs['input_ids'],
                 outputs['attention_mask']
             )
             whis_embs = F.normalize(whis_embs, p=2, dim=1)
+            if pa_embs is not None:
+                whis_embs = torch.cat([whis_embs, pa_embs], axis=1)
 
             for m_idx, message_id in enumerate(batch['message_id']):
                 emb = whis_embs[m_idx].cpu().numpy().tolist()

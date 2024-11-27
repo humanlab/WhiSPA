@@ -34,10 +34,12 @@ class WhiSBERTModel(torch.nn.Module):
         if config.use_sbert_encoder:
             self.sbert_encoder = self.sbert_model.encoder.to(config.device)
 
-        if config.n_new_dims > 0:
-            # self.expand_model()
-            # SBERT POOLER LINEAR EXPANSION
-            self.sbert_model.pooler.dense = expand_linear_layer(self.sbert_model.pooler.dense, added_out_features=self.config.n_new_dims)
+        if config.n_new_dims:
+            # Learnable Emotion (PA) Projection Matrix (D x 10)
+            self.projection = torch.nn.Linear(config.emb_dim, config.n_new_dims).to(config.device)
+            # Dynamic Loss Balancing
+            self.log_sigma_cos = torch.nn.Parameter(torch.tensor(0.0))
+            self.log_sigma_mse = torch.nn.Parameter(torch.tensor(0.0))
 
         self.whisper_model.to(config.device)
         self.linear = self.sbert_model.pooler.dense.to(config.device)
@@ -106,8 +108,9 @@ class WhiSBERTModel(torch.nn.Module):
         embs = self.pooler(embs, text_attention_mask)
         embs = self.linear(embs)
         embs = self.activation(embs)
-                
-        return embs
+
+        pa = self.projection(embs) if self.config.n_new_dims else None
+        return embs, pa
 
 
 def expand_conv1d_layer(conv1d_layer, added_in_channels=None, added_out_channels=None):

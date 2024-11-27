@@ -26,3 +26,8 @@ Available GPU IDs: [0, 1, 2]
 
 
 Preprocessing AudioDataset...
+	Total dataset size (N): 503522
+	Training dataset size (N): 402817
+	Validation dataset size (N): 100705
+
+Starting Training...

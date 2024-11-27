@@ -17,14 +17,14 @@ class AudioDataset(torch.utils.data.Dataset):
         self.mode = mode
 
         # Normalize Affect, Personality, Mental Health Scores
-        if mode == 'train':
-            for feat in ['valence', 'arousal', 'ope', 'agr', 'ext', 'con', 'neu', 'ang_norm', 'anx_norm', 'dep_norm']:
-                wtc_data = np.concatenate([self.wtc_segments_df[feat].to_numpy(), self.wtc_segments_df[feat].to_numpy()])
-                wtc_min, wtc_max = wtc_data.min(), wtc_data.max()
-                self.wtc_segments_df[feat] = 2 * ((self.wtc_segments_df[feat] - wtc_min) / (wtc_max - wtc_min)) - 1
-                hitop_data = np.concatenate([self.hitop_segments_df[feat].to_numpy(), self.hitop_segments_df[feat].to_numpy()])
-                hitop_min, hitop_max = hitop_data.min(), hitop_data.max()
-                self.hitop_segments_df[feat] = 2 * ((self.hitop_segments_df[feat] - hitop_min) / (hitop_max - hitop_min)) - 1
+        # if mode == 'train':
+        #     for feat in ['valence', 'arousal', 'ope', 'agr', 'ext', 'con', 'neu', 'ang_norm', 'anx_norm', 'dep_norm']:
+        #         wtc_data = np.concatenate([self.wtc_segments_df[feat].to_numpy(), self.wtc_segments_df[feat].to_numpy()])
+        #         wtc_min, wtc_max = wtc_data.min(), wtc_data.max()
+        #         self.wtc_segments_df[feat] = 2 * ((self.wtc_segments_df[feat] - wtc_min) / (wtc_max - wtc_min)) - 1
+        #         hitop_data = np.concatenate([self.hitop_segments_df[feat].to_numpy(), self.hitop_segments_df[feat].to_numpy()])
+        #         hitop_min, hitop_max = hitop_data.min(), hitop_data.max()
+        #         self.hitop_segments_df[feat] = 2 * ((self.hitop_segments_df[feat] - hitop_min) / (hitop_max - hitop_min)) - 1
 
     def __len__(self):
         return len(self.hitop_segments_df) + len(self.wtc_segments_df)

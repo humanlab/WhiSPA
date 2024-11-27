@@ -342,11 +342,8 @@ def train(
                 with torch.no_grad():
                     sbert_embs = sbert(**sbert_inputs).last_hidden_state
                 sbert_embs = mean_pooling(sbert_embs, sbert_inputs['attention_mask'])
-                if config.n_new_dims > 0:
-                    sbert_embs = torch.cat([
-                        sbert_embs,
-                        batch['outcomes'].to(config.device)
-                    ], dim=1)
+                if config.n_new_dims:
+                    pa_gt = batch['outcomes'].to(config.device)
 
                 # Whisper-based tokenization
                 with torch.no_grad():
@@ -359,17 +356,28 @@ def train(
                     ).to(config.device)
 
                 # Get WhiSBERT's MEAN/LAST token
-                whis_embs = whisbert(
+                whis_embs, pa_embs = whisbert(
                     batch['audio_inputs'].to(config.device),
                     outputs['input_ids'],
                     outputs['attention_mask']
                 )
 
-                # Apply loss function
-                loss = loss_func(whis_embs, sbert_embs)
+                # Apply loss functions on embeddings
+                cos_loss = loss_func(whis_embs, sbert_embs)
+                mse_loss = F.mse_loss(pa_embs, pa_gt)
+
+                # Dynamic Loss Balancing/Uncertainty Weighting (Kendall et al., 2018)
+                log_sigma_cos = whisbert.module.log_sigma_cos if isinstance(whisbert, torch.nn.DataParallel) else whisbert.log_sigma_cos
+                log_sigma_mse = whisbert.module.log_sigma_mse if isinstance(whisbert, torch.nn.DataParallel) else whisbert.log_sigma_mse
+
+                weighted_cos_loss = (1 / (2 * torch.exp(log_sigma_cos)**2)) * cos_loss
+                weighted_mse_loss = (1 / (2 * torch.exp(log_sigma_mse)**2)) * mse_loss
+                uncertainty_penalty = log_sigma_cos + log_sigma_mse
+                
+                loss = weighted_cos_loss + weighted_mse_loss + uncertainty_penalty
                 epoch_train_loss += loss.item()
 
-            # Scale the loss and perform backward pass
+            # Scale the losses and perform backward pass
             scaler.scale(loss).backward()
 
             # Gradient clipping (optional but common for stability)
@@ -400,11 +408,8 @@ def train(
                     # Get SBERT's embedding
                     sbert_embs = sbert(**sbert_inputs).last_hidden_state
                     sbert_embs = mean_pooling(sbert_embs, sbert_inputs['attention_mask'])
-                    if config.n_new_dims > 0:
-                        sbert_embs = torch.cat([
-                            sbert_embs,
-                            batch['outcomes'].to(config.device)
-                        ], dim=1)
+                    if config.n_new_dims:
+                        pa_gt = batch['outcomes'].to(config.device)
 
                     # Whisper-based tokenization
                     outputs = processor.tokenizer(
@@ -416,14 +421,25 @@ def train(
                     ).to(config.device)
 
                     # Get WhiSBERT's MEAN/LAST token
-                    whis_embs = whisbert(
+                    whis_embs, pa_embs = whisbert(
                         batch['audio_inputs'].to(config.device),
                         outputs['input_ids'],
                         outputs['attention_mask']
                     )
 
-                    # Apply loss function
-                    loss = loss_func(whis_embs, sbert_embs)
+                    # Apply loss functions on embeddings
+                    cos_loss = loss_func(whis_embs, sbert_embs)
+                    mse_loss = F.mse_loss(pa_embs, pa_gt)
+
+                    # Dynamic Loss Balancing/Uncertainty Weighting (Kendall et al., 2018)
+                    log_sigma_cos = whisbert.module.log_sigma_cos if isinstance(whisbert, torch.nn.DataParallel) else whisbert.log_sigma_cos
+                    log_sigma_mse = whisbert.module.log_sigma_mse if isinstance(whisbert, torch.nn.DataParallel) else whisbert.log_sigma_mse
+
+                    weighted_cos_loss = (1 / (2 * torch.exp(log_sigma_cos)**2)) * cos_loss
+                    weighted_mse_loss = (1 / (2 * torch.exp(log_sigma_mse)**2)) * mse_loss
+                    uncertainty_penalty = log_sigma_cos + log_sigma_mse
+                    
+                    loss = weighted_cos_loss + weighted_mse_loss + uncertainty_penalty
                     epoch_val_loss += loss.item()
 
         # Adjust the learning rate based on validation loss
