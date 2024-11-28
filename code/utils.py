@@ -19,7 +19,6 @@ def cos_sim_loss(whis_embs, sbert_embs):
     # z_text = F.normalize(sbert_embs, p=2, dim=1)
     # return 1 - (z_audio * z_text).sum(dim=-1).mean()
     # Yields exactly the same result as torch.cosine_similarity()
-
     return 1 - torch.cosine_similarity(whis_embs, sbert_embs, dim=-1).mean()
 
 
@@ -36,7 +35,7 @@ def sim_clr_loss(whis_embs, sbert_embs):
 
 
 # Normalized Temperature-Scaled Cross Entropy Loss
-def norm_temp_ce_loss(whis_embs, sbert_embs, tau=0.1, pooling_mode='sum'):
+def nce_cont_loss(whis_embs, sbert_embs, tau=0.1, pooling_mode='sum'):
     """
         Helpful link I used for reference:
         https://jamesmccaffrey.wordpress.com/2022/04/11/an-example-of-normalized-temperature-scaled-cross-entropy-loss/

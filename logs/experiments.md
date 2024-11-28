@@ -1,35 +1,25 @@
-## Whisper: Training Command Logs
+## WhiSA: Training Command Logs
 ```bash
-CUDA_VISIBLE_DEVICES=2,3 \
+CUDA_VISIBLE_DEVICES=1,2,3 \
 python code/train.py \
 --whisper_model_id openai/whisper-tiny \
 --pooling_mode mean \
---loss cos_sim \
+--loss CS \
 --num_epochs 50 \
---batch_size 512 \
+--batch_size 900 \
 --num_workers 16 \
 --lr 1e-5 \
 --wd 1e-2 \
---save_name whisper-384_mean_cos-sim_50_512_1e-5_1e-2 \
-> logs/whisper-384_mean_cos-sim_50_512_1e-5_1e-2.txt
+--save_name whisper-384_cs_50_900_1e-5_1e-2 \
+> logs/whisper-384_cs_50_900_1e-5_1e-2.txt \
+&& CUDA_VISIBLE_DEVICES=1,2,3 \
+python code/inference.py \
+--load_name whisper-384_cs_50_900_1e-5_1e-2 \
+--batch_size 3096 \
+--num_workers 16 \
+--no_shuffle
 ```
 Done.
-
-```bash
-CUDA_VISIBLE_DEVICES=2,3 \
-python code/train.py \
---whisper_model_id openai/whisper-tiny \
---pooling_mode mean \
---loss sim_clr \
---num_epochs 50 \
---batch_size 512 \
---num_workers 16 \
---lr 1e-5 \
---wd 1e-2 \
---save_name whisper-384_mean_sim-clr_50_512_1e-5_1e-2 \
-> logs/whisper-384_mean_sim-clr_50_512_1e-5_1e-2.txt
-```
-Interrupted at Epoch 41.
 
 ```bash
 CUDA_VISIBLE_DEVICES=2,3 \
@@ -82,29 +72,30 @@ python code/train.py \
 Done.
 
 
-## WhisPA: Training Command Logs
+## WhiSPA: Training Command Logs
 ```bash
 CUDA_VISIBLE_DEVICES=1,2,3 \
 python code/train.py \
 --whisper_model_id openai/whisper-tiny \
 --n_new_dims 10 \
 --pooling_mode mean \
---loss cos_sim \
+--loss NCE \
 --num_epochs 50 \
 --batch_size 900 \
 --num_workers 16 \
 --lr 1e-5 \
 --wd 1e-2 \
---save_name whispa-384_mean_cos-sim_50_900_1e-5_1e-2 \
-> logs/whispa-384_mean_cos-sim_50_900_1e-5_1e-2.txt \
+--save_name whispa-384_nce_50_900_1e-5_1e-2 \
+> logs/whispa-384_nce_50_900_1e-5_1e-2.txt \
 && CUDA_VISIBLE_DEVICES=1,2,3 \
 python code/inference.py \
---load_name whispa-384_mean_cos-sim_50_900_1e-5_1e-2 \
+--load_name whispa-384_nce_50_900_1e-5_1e-2 \
 --batch_size 3096 \
 --num_workers 16 \
 --no_shuffle
 ```
-Done.
+- Note that cs ran -10 SBERT feats
+Done. 
 
 ```bash
 CUDA_VISIBLE_DEVICES=1,2,3 \
@@ -145,21 +136,3 @@ python code/train.py \
 --save_name whispart-384_mean_cos-sim_50_500_1e-5_1e-2 \
 > logs/whispart-384_mean_cos-sim_50_500_1e-5_1e-2.txt
 ```
-
-
-##  768 EMBEDDING DIMENSIONS
-```bash
-CUDA_VISIBLE_DEVICES=2,3 \
-python code/train.py \
---whisper_model_id openai/whisper-small \
---pooling_mode mean \
---loss cos_sim \
---num_epochs 50 \
---batch_size 100 \
---num_workers 16 \
---lr 1e-5 \
---wd 1e-2 \
---save_name whisper-768_mean_cos-sim_50_512_1e-5_1e-2 \
-> logs/whisper-768_mean_cos-sim_50_512_1e-5_1e-2.txt
-```
-Interrupted at Epoch 29.

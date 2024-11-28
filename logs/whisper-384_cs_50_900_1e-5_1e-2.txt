@@ -1,0 +1,291 @@
+Preparing Model Configuration...
+{'batch_size': 900,
+ 'device': 'cuda',
+ 'emb_dim': 384,
+ 'learning_rate': 1e-05,
+ 'loss': 'CS',
+ 'n_new_dims': 0,
+ 'num_epochs': 50,
+ 'num_workers': 16,
+ 'pooling_mode': 'mean',
+ 'sbert_model_id': 'sentence-transformers/all-MiniLM-L12-v2',
+ 'shuffle': True,
+ 'tau': 0.1,
+ 'use_sbert_encoder': False,
+ 'weight_decay': 0.01,
+ 'whisper_model_id': 'openai/whisper-tiny'}
+
+Saving WhiSBERT Config...
+
+Loading and Initializing Models with Config...
+
+Available GPU IDs: [0, 1, 2]
+	GPU 0: NVIDIA RTX A6000
+	GPU 1: NVIDIA RTX A6000
+	GPU 2: NVIDIA RTX A6000
+
+
+Preprocessing AudioDataset...
+	Total dataset size (N): 503522
+	Training dataset size (N): 402817
+	Validation dataset size (N): 100705
+
+Starting Training...
+Epoch 1/50
+	Training (CS) Loss: 0.6573
+	Validation (CS) Loss: 0.5558
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:18:35.714428
+Epoch 2/50
+	Training (CS) Loss: 0.5083
+	Validation (CS) Loss: 0.4729
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:17:57.698614
+Epoch 3/50
+	Training (CS) Loss: 0.4491
+	Validation (CS) Loss: 0.4283
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:18:11.171915
+Epoch 4/50
+	Training (CS) Loss: 0.4118
+	Validation (CS) Loss: 0.3999
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:18:00.261286
+Epoch 5/50
+	Training (CS) Loss: 0.3895
+	Validation (CS) Loss: 0.3836
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:17:38.649924
+Epoch 6/50
+	Training (CS) Loss: 0.3772
+	Validation (CS) Loss: 0.3720
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:17:53.009077
+Epoch 7/50
+	Training (CS) Loss: 0.3666
+	Validation (CS) Loss: 0.3630
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:17:55.004202
+Epoch 8/50
+	Training (CS) Loss: 0.3582
+	Validation (CS) Loss: 0.3553
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:17:53.262211
+Epoch 9/50
+	Training (CS) Loss: 0.3511
+	Validation (CS) Loss: 0.3485
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:18:17.603196
+Epoch 10/50
+	Training (CS) Loss: 0.3458
+	Validation (CS) Loss: 0.3449
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:18:55.585889
+Epoch 11/50
+	Training (CS) Loss: 0.3422
+	Validation (CS) Loss: 0.3414
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:18:35.482226
+Epoch 12/50
+	Training (CS) Loss: 0.3387
+	Validation (CS) Loss: 0.3380
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:17:49.823283
+Epoch 13/50
+	Training (CS) Loss: 0.3354
+	Validation (CS) Loss: 0.3348
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:17:28.488422
+Epoch 14/50
+	Training (CS) Loss: 0.3323
+	Validation (CS) Loss: 0.3323
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:17:56.175626
+Epoch 15/50
+	Training (CS) Loss: 0.3304
+	Validation (CS) Loss: 0.3306
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:17:44.187946
+Epoch 16/50
+	Training (CS) Loss: 0.3286
+	Validation (CS) Loss: 0.3288
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:17:43.301419
+Epoch 17/50
+	Training (CS) Loss: 0.3269
+	Validation (CS) Loss: 0.3272
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:17:50.469128
+Epoch 18/50
+	Training (CS) Loss: 0.3253
+	Validation (CS) Loss: 0.3255
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:18:02.947438
+Epoch 19/50
+	Training (CS) Loss: 0.3240
+	Validation (CS) Loss: 0.3246
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:17:37.666131
+Epoch 20/50
+	Training (CS) Loss: 0.3230
+	Validation (CS) Loss: 0.3237
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:17:39.437816
+Epoch 21/50
+	Training (CS) Loss: 0.3221
+	Validation (CS) Loss: 0.3228
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:17:52.862430
+Epoch 22/50
+	Training (CS) Loss: 0.3212
+	Validation (CS) Loss: 0.3220
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:18:04.622965
+Epoch 23/50
+	Training (CS) Loss: 0.3204
+	Validation (CS) Loss: 0.3211
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:17:56.021887
+Epoch 24/50
+	Training (CS) Loss: 0.3195
+	Validation (CS) Loss: 0.3202
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:18:26.654276
+Epoch 25/50
+	Training (CS) Loss: 0.3186
+	Validation (CS) Loss: 0.3193
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:18:14.598683
+Epoch 26/50
+	Training (CS) Loss: 0.3178
+	Validation (CS) Loss: 0.3185
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:18:27.536891
+Epoch 27/50
+	Training (CS) Loss: 0.3169
+	Validation (CS) Loss: 0.3177
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:18:21.210010
+Epoch 28/50
+	Training (CS) Loss: 0.3161
+	Validation (CS) Loss: 0.3169
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:18:37.046518
+Epoch 29/50
+	Training (CS) Loss: 0.3153
+	Validation (CS) Loss: 0.3161
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:18:41.980194
+Epoch 30/50
+	Training (CS) Loss: 0.3145
+	Validation (CS) Loss: 0.3153
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:17:50.468363
+Epoch 31/50
+	Training (CS) Loss: 0.3137
+	Validation (CS) Loss: 0.3145
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:21:18.313648
+Epoch 32/50
+	Training (CS) Loss: 0.3129
+	Validation (CS) Loss: 0.3138
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:18:00.465082
+Epoch 33/50
+	Training (CS) Loss: 0.3122
+	Validation (CS) Loss: 0.3130
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:18:14.522232
+Epoch 34/50
+	Training (CS) Loss: 0.3114
+	Validation (CS) Loss: 0.3123
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:18:10.118968
+Epoch 35/50
+	Training (CS) Loss: 0.3107
+	Validation (CS) Loss: 0.3116
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:18:00.678797
+Epoch 36/50
+	Training (CS) Loss: 0.3100
+	Validation (CS) Loss: 0.3109
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:17:50.811673
+Epoch 37/50
+	Training (CS) Loss: 0.3092
+	Validation (CS) Loss: 0.3101
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:17:58.559135
+Epoch 38/50
+	Training (CS) Loss: 0.3085
+	Validation (CS) Loss: 0.3094
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:18:49.159047
+Epoch 39/50
+	Training (CS) Loss: 0.3078
+	Validation (CS) Loss: 0.3088
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:18:33.738365
+Epoch 40/50
+	Training (CS) Loss: 0.3071
+	Validation (CS) Loss: 0.3081
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:18:55.583104
+Epoch 41/50
+	Training (CS) Loss: 0.3064
+	Validation (CS) Loss: 0.3074
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:18:56.236045
+Epoch 42/50
+	Training (CS) Loss: 0.3058
+	Validation (CS) Loss: 0.3068
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:18:03.681519
+Epoch 43/50
+	Training (CS) Loss: 0.3051
+	Validation (CS) Loss: 0.3061
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:18:32.539131
+Epoch 44/50
+	Training (CS) Loss: 0.3045
+	Validation (CS) Loss: 0.3055
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:18:13.410757
+Epoch 45/50
+	Training (CS) Loss: 0.3038
+	Validation (CS) Loss: 0.3048
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:18:35.860756
+Epoch 46/50
+	Training (CS) Loss: 0.3032
+	Validation (CS) Loss: 0.3042
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:19:31.227089
+Epoch 47/50
+	Training (CS) Loss: 0.3026
+	Validation (CS) Loss: 0.3036
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:20:57.416567
+Epoch 48/50
+	Training (CS) Loss: 0.3019
+	Validation (CS) Loss: 0.3030
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:17:45.753994
+Epoch 49/50
+	Training (CS) Loss: 0.3013
+	Validation (CS) Loss: 0.3024
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:18:25.003400
+Epoch 50/50
+	Training (CS) Loss: 0.3007
+	Validation (CS) Loss: 0.3018
+	Learning Rate: 1e-05
+	Epoch Elapsed Time: 0:18:16.197809
+
+Total Elapsed Time: 15:15:36.493658
+
+Saving WhiSBERT Model...
+	Done.	`/cronus_data/rrao/WhiSBERT/models/whisper-384_cs_50_900_1e-5_1e-2/best.pth`
+
+	Done.	`/cronus_data/rrao/WhiSBERT/models/whisper-384_cs_50_900_1e-5_1e-2/last.pth`
+

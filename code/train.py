@@ -25,8 +25,7 @@ from data import AudioDataset, collate_train
 from utils import (
     mean_pooling,
     cos_sim_loss,
-    sim_clr_loss,
-    norm_temp_ce_loss
+    nce_cont_loss
 )
 
 
@@ -116,12 +115,11 @@ def load_args():
     )
     parser.add_argument(
         '--loss',
-        default='cos_sim',
+        default='CS',
         choices=[
-            'cos_sim',
-            'sim_clr',
-            'norm_temp_ce_sum',
-            'norm_temp_ce_mean',
+            'CS',
+            'NCE',
+            'WCSMSE',
         ],
         type=str,
         help='Specify the type of loss criteria during training'
@@ -299,27 +297,26 @@ def train(
         verbose=True
     )
 
-    if config.loss == 'cos_sim':
+    if config.loss == 'CS':
         loss_func = cos_sim_loss
 
-    elif config.loss == 'sim_clr':
-        loss_func = sim_clr_loss
+    elif config.loss == 'NCE':
+        loss_func = nce_cont_loss
 
-    elif config.loss == 'norm_temp_ce_sum':
-        def norm_temp_ce_sum_loss(whis_embs, sbert_embs):
-            return norm_temp_ce_loss(whis_embs, sbert_embs, tau=config.tau, pooling_mode='sum')
-        loss_func = norm_temp_ce_sum_loss
+    elif config.loss == 'WCSMSE':
+        loss_func = None # Not implemented yet
 
-    elif config.loss == 'norm_temp_ce_mean':
-        def norm_temp_ce_mean_loss(whis_embs, sbert_embs):
-            return norm_temp_ce_loss(whis_embs, sbert_embs, tau=config.tau, pooling_mode='mean')
-        loss_func = norm_temp_ce_mean_loss
+    # # This condition is for injecting PA features into SBERT embeddings during training
+    # if config.n_new_dims:
+    #     # These are the indices of the least correlated features for PA outcomes
+    #     pa_indices = torch.tensor([319, 0, 233, 351, 185, 324, 145, 359, 246, 60]).to(config.device)
 
     sbert.eval()
     train_loss = []
     val_loss = []
     best_state = None
 
+    start_time = time.time()
     for epoch in range(config.num_epochs):
         whisbert.train()
         epoch_start_time = time.time()
@@ -344,6 +341,8 @@ def train(
                 sbert_embs = mean_pooling(sbert_embs, sbert_inputs['attention_mask'])
                 if config.n_new_dims:
                     pa_gt = batch['outcomes'].to(config.device)
+                    sbert_embs = torch.cat([sbert_embs, pa_gt], dim=1)
+                    # sbert_embs[torch.arange(sbert_embs.shape[0]).unsqueeze(1), pa_indices] = pa_gt
 
                 # Whisper-based tokenization
                 with torch.no_grad():
@@ -356,25 +355,26 @@ def train(
                     ).to(config.device)
 
                 # Get WhiSBERT's MEAN/LAST token
-                whis_embs, pa_embs = whisbert(
+                whis_embs = whisbert(
                     batch['audio_inputs'].to(config.device),
                     outputs['input_ids'],
                     outputs['attention_mask']
                 )
 
                 # Apply loss functions on embeddings
-                cos_loss = loss_func(whis_embs, sbert_embs)
-                mse_loss = F.mse_loss(pa_embs, pa_gt)
+                loss = loss_func(whis_embs, sbert_embs)
+                # mse_loss = F.mse_loss(pa_embs, pa_gt)
 
-                # Dynamic Loss Balancing/Uncertainty Weighting (Kendall et al., 2018)
-                log_sigma_cos = whisbert.module.log_sigma_cos if isinstance(whisbert, torch.nn.DataParallel) else whisbert.log_sigma_cos
-                log_sigma_mse = whisbert.module.log_sigma_mse if isinstance(whisbert, torch.nn.DataParallel) else whisbert.log_sigma_mse
+                # # Dynamic Loss Balancing/Uncertainty Weighting (Kendall et al., 2018)
+                # log_sigma_cos = whisbert.module.log_sigma_cos if isinstance(whisbert, torch.nn.DataParallel) else whisbert.log_sigma_cos
+                # log_sigma_mse = whisbert.module.log_sigma_mse if isinstance(whisbert, torch.nn.DataParallel) else whisbert.log_sigma_mse
 
-                weighted_cos_loss = (1 / (2 * torch.exp(log_sigma_cos)**2)) * cos_loss
-                weighted_mse_loss = (1 / (2 * torch.exp(log_sigma_mse)**2)) * mse_loss
-                uncertainty_penalty = log_sigma_cos + log_sigma_mse
+                # weighted_cos_loss = (1 / (2 * torch.exp(log_sigma_cos)**2)) * cos_loss
+                # weighted_mse_loss = (1 / (2 * torch.exp(log_sigma_mse)**2)) * mse_loss
+                # uncertainty_penalty = log_sigma_cos + log_sigma_mse
                 
-                loss = weighted_cos_loss + weighted_mse_loss + uncertainty_penalty
+                # loss = weighted_cos_loss + weighted_mse_loss + uncertainty_penalty
+                # epoch_train_loss += loss.item()
                 epoch_train_loss += loss.item()
 
             # Scale the losses and perform backward pass
@@ -410,6 +410,8 @@ def train(
                     sbert_embs = mean_pooling(sbert_embs, sbert_inputs['attention_mask'])
                     if config.n_new_dims:
                         pa_gt = batch['outcomes'].to(config.device)
+                        sbert_embs = torch.cat([sbert_embs, pa_gt], dim=1)
+                        # sbert_embs[torch.arange(sbert_embs.shape[0]).unsqueeze(1), pa_indices] = pa_gt
 
                     # Whisper-based tokenization
                     outputs = processor.tokenizer(
@@ -421,25 +423,26 @@ def train(
                     ).to(config.device)
 
                     # Get WhiSBERT's MEAN/LAST token
-                    whis_embs, pa_embs = whisbert(
+                    whis_embs = whisbert(
                         batch['audio_inputs'].to(config.device),
                         outputs['input_ids'],
                         outputs['attention_mask']
                     )
 
                     # Apply loss functions on embeddings
-                    cos_loss = loss_func(whis_embs, sbert_embs)
-                    mse_loss = F.mse_loss(pa_embs, pa_gt)
+                    loss = loss_func(whis_embs, sbert_embs)
+                    # mse_loss = F.mse_loss(pa_embs, pa_gt)
 
-                    # Dynamic Loss Balancing/Uncertainty Weighting (Kendall et al., 2018)
-                    log_sigma_cos = whisbert.module.log_sigma_cos if isinstance(whisbert, torch.nn.DataParallel) else whisbert.log_sigma_cos
-                    log_sigma_mse = whisbert.module.log_sigma_mse if isinstance(whisbert, torch.nn.DataParallel) else whisbert.log_sigma_mse
+                    # # Dynamic Loss Balancing/Uncertainty Weighting (Kendall et al., 2018)
+                    # log_sigma_cos = whisbert.module.log_sigma_cos if isinstance(whisbert, torch.nn.DataParallel) else whisbert.log_sigma_cos
+                    # log_sigma_mse = whisbert.module.log_sigma_mse if isinstance(whisbert, torch.nn.DataParallel) else whisbert.log_sigma_mse
 
-                    weighted_cos_loss = (1 / (2 * torch.exp(log_sigma_cos)**2)) * cos_loss
-                    weighted_mse_loss = (1 / (2 * torch.exp(log_sigma_mse)**2)) * mse_loss
-                    uncertainty_penalty = log_sigma_cos + log_sigma_mse
+                    # weighted_cos_loss = (1 / (2 * torch.exp(log_sigma_cos)**2)) * cos_loss
+                    # weighted_mse_loss = (1 / (2 * torch.exp(log_sigma_mse)**2)) * mse_loss
+                    # uncertainty_penalty = log_sigma_cos + log_sigma_mse
                     
-                    loss = weighted_cos_loss + weighted_mse_loss + uncertainty_penalty
+                    # loss = weighted_cos_loss + weighted_mse_loss + uncertainty_penalty
+                    # epoch_val_loss += loss.item()
                     epoch_val_loss += loss.item()
 
         # Adjust the learning rate based on validation loss
@@ -473,6 +476,9 @@ def train(
         print(f"\tValidation ({config.loss}) Loss: {avg_val_loss:.4f}")
         print(f"\tLearning Rate: {optimizer.param_groups[0]['lr']}")
         print(f"\tEpoch Elapsed Time: {epoch_elapsed_time}")
+    
+    total_elapsed_time = timedelta(seconds=time.time() - start_time)
+    print(f"\nTotal Elapsed Time: {total_elapsed_time}")
         
 
 def main():
@@ -507,16 +513,6 @@ def main():
             tau = args.tau,
             use_sbert_encoder = args.use_sbert_encoder,
             n_new_dims= args.n_new_dims,
-            # new_encoder_n_layers = args.new_encoder_n_layers,
-            # new_encoder_n_heads = args.new_encoder_n_heads,
-            # new_encoder_ffn_dim = args.new_encoder_ffn_dim,
-            # activation_function = args.activation_function,
-            # eps = args.eps,
-            # dropout = args.dropout,
-            # encoder_layerdrop = args.encoder_layerdrop,
-            # decoder_layerdrop = args.decoder_layerdrop,
-            # attention_dropout = args.attention_dropout,
-            # activation_dropout = args.activation_dropout,
             batch_size = args.batch_size,
             num_workers = args.num_workers,
             num_epochs = args.num_epochs,

@@ -117,7 +117,7 @@ def inference(
         f'OutputError: The output filepath(s) already exist.\n\t{hitop_output_filepath}\n\t{wtc_output_filepath}'
     )
  
-    cols = ['message_id'] + [f'f{i:03d}' for i in range(config.emb_dim + config.n_new_dims)]
+    cols = ['message_id'] + [f'f{i:03d}' for i in range(config.emb_dim)]
     df = pd.DataFrame(columns=cols)
     df.to_csv(hitop_output_filepath, index=False)
     df.to_csv(wtc_output_filepath, index=False)
@@ -125,7 +125,7 @@ def inference(
     whisbert.eval()
     start_time = time.time()
     with torch.no_grad():
-        for batch in tqdm(data_loader):           
+        for batch in tqdm(data_loader):
             # Whisper-based tokenization
             with torch.no_grad():
                 outputs = processor.tokenizer(
@@ -137,14 +137,14 @@ def inference(
                 ).to(config.device)
 
             # Get WhiSBERT's MEAN/LAST token
-            whis_embs, pa_embs = whisbert(
+            whis_embs = whisbert(
                 batch['audio_inputs'].to(config.device),
                 outputs['input_ids'],
                 outputs['attention_mask']
             )
             whis_embs = F.normalize(whis_embs, p=2, dim=1)
-            if pa_embs is not None:
-                whis_embs = torch.cat([whis_embs, pa_embs], axis=1)
+            # if pa_embs is not None:
+            #     whis_embs = torch.cat([whis_embs, pa_embs], axis=1)
 
             for m_idx, message_id in enumerate(batch['message_id']):
                 emb = whis_embs[m_idx].cpu().numpy().tolist()
