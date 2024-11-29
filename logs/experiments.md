@@ -79,6 +79,32 @@ python code/train.py \
 --whisper_model_id openai/whisper-tiny \
 --n_new_dims 10 \
 --pooling_mode mean \
+--loss CS \
+--num_epochs 50 \
+--batch_size 900 \
+--num_workers 16 \
+--lr 1e-5 \
+--wd 1e-2 \
+--save_name whispa-384_cs_50_900_1e-5_1e-2 \
+> logs/whispa-384_cs_50_900_1e-5_1e-2.txt \
+&& CUDA_VISIBLE_DEVICES=1,2,3 \
+python code/inference.py \
+--load_name whispa-384_cs_50_900_1e-5_1e-2 \
+--batch_size 3096 \
+--num_workers 16 \
+--no_shuffle
+```
+- Note that cs ran -10 SBERT dims with raw psych feats
+- We can try -10 SBERT dims with min-max norm psych feats
+- We can try -10 SBERT dims with z-score norm psych feats
+Done. 
+
+```bash
+CUDA_VISIBLE_DEVICES=1,2,3 \
+python code/train.py \
+--whisper_model_id openai/whisper-tiny \
+--n_new_dims 10 \
+--pooling_mode mean \
 --loss NCE \
 --num_epochs 50 \
 --batch_size 900 \
@@ -94,30 +120,8 @@ python code/inference.py \
 --num_workers 16 \
 --no_shuffle
 ```
-- Note that cs ran -10 SBERT feats
-Done. 
-
-```bash
-CUDA_VISIBLE_DEVICES=1,2,3 \
-python code/train.py \
---whisper_model_id openai/whisper-tiny \
---n_new_dims 10 \
---pooling_mode mean \
---loss norm_temp_ce_sum \
---num_epochs 50 \
---batch_size 900 \
---num_workers 16 \
---lr 1e-5 \
---wd 1e-2 \
---save_name whispa-384_mean_nce-sum_50_900_1e-5_1e-2 \
-> logs/whispa-384_mean_nce-sum_50_900_1e-5_1e-2.txt \
-&& CUDA_VISIBLE_DEVICES=1,2,3 \
-python code/inference.py \
---load_name whispa-384_mean_nce-sum_50_900_1e-5_1e-2 \
---batch_size 3096 \
---num_workers 16 \
---no_shuffle
-```
+- Note that nce ran +10 min-max norm psych feats
+- We can try +10 z-score norm psych feats
 In Progress.
 
 ```bash

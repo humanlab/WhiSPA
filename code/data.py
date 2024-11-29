@@ -21,16 +21,16 @@ class AudioDataset(torch.utils.data.Dataset):
             for feat in ['valence', 'arousal', 'ope', 'agr', 'ext', 'con', 'neu', 'ang_norm', 'anx_norm', 'dep_norm']:
                 wtc_data = np.concatenate([self.wtc_segments_df[feat].to_numpy(), self.wtc_segments_df[feat].to_numpy()])
                 hitop_data = np.concatenate([self.hitop_segments_df[feat].to_numpy(), self.hitop_segments_df[feat].to_numpy()])
-                # # Min-Max Normalization
-                # wtc_min, wtc_max = wtc_data.min(), wtc_data.max()
-                # self.wtc_segments_df[feat] = 2 * ((self.wtc_segments_df[feat] - wtc_min) / (wtc_max - wtc_min)) - 1
-                # hitop_min, hitop_max = hitop_data.min(), hitop_data.max()
-                # self.hitop_segments_df[feat] = 2 * ((self.hitop_segments_df[feat] - hitop_min) / (hitop_max - hitop_min)) - 1
-                # Z-Score Normalization
-                wtc_mean, wtc_std = wtc_data.mean(), wtc_data.std()
-                self.wtc_segments_df[feat] = (self.wtc_segments_df[feat] - wtc_mean) / wtc_std
-                hitop_mean, hitop_std = hitop_data.mean(), hitop_data.std()
-                self.hitop_segments_df[feat] = (self.hitop_segments_df[feat] - hitop_mean) / hitop_std
+                # Min-Max Normalization [-1 <-> 1]
+                wtc_min, wtc_max = wtc_data.min(), wtc_data.max()
+                self.wtc_segments_df[feat] = 2 * ((self.wtc_segments_df[feat] - wtc_min) / (wtc_max - wtc_min)) - 1
+                hitop_min, hitop_max = hitop_data.min(), hitop_data.max()
+                self.hitop_segments_df[feat] = 2 * ((self.hitop_segments_df[feat] - hitop_min) / (hitop_max - hitop_min)) - 1
+                # # Z-Score Normalization [Mean: 0, Std: 1]
+                # wtc_mean, wtc_std = wtc_data.mean(), wtc_data.std()
+                # self.wtc_segments_df[feat] = (self.wtc_segments_df[feat] - wtc_mean) / wtc_std
+                # hitop_mean, hitop_std = hitop_data.mean(), hitop_data.std()
+                # self.hitop_segments_df[feat] = (self.hitop_segments_df[feat] - hitop_mean) / hitop_std
 
     def __len__(self):
         return len(self.hitop_segments_df) + len(self.wtc_segments_df)

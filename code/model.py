@@ -110,7 +110,7 @@ class WhiSBERTModel(torch.nn.Module):
         embs = self.activation(embs)
 
         if self.config.n_new_dims:
-            pa = self.projection(embs)
+            pa = self.activation(self.projection(embs))
             return torch.cat([embs, pa], dim=1)
         else:
             return embs

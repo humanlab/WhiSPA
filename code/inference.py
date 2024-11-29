@@ -117,7 +117,7 @@ def inference(
         f'OutputError: The output filepath(s) already exist.\n\t{hitop_output_filepath}\n\t{wtc_output_filepath}'
     )
  
-    cols = ['message_id'] + [f'f{i:03d}' for i in range(config.emb_dim)]
+    cols = ['message_id'] + [f'f{i:03d}' for i in range(config.emb_dim + config.n_new_dims)]
     df = pd.DataFrame(columns=cols)
     df.to_csv(hitop_output_filepath, index=False)
     df.to_csv(wtc_output_filepath, index=False)
