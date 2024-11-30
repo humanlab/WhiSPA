@@ -1,6 +1,7 @@
 CACHE_DIR = '/cronus_data/rrao/cache/'
 CHECKPOINT_DIR = '/cronus_data/rrao/WhiSBERT/models/'
 EMBEDDINGS_DIR = '/cronus_data/rrao/WhiSBERT/embeddings/'
+SBERT_384_DIM_INDECES = [0, 233, 351, 185, 324, 145, 359, 246, 60, 56]
 
 
 class WhiSBERTConfig():

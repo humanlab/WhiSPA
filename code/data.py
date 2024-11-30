@@ -2,6 +2,7 @@ import os
 import numpy as np
 import pandas as pd
 import torch, torchaudio
+from config import SBERT_384_DIM_INDECES
 
 
 HITOP_AUDIO_DIR = '/cronus_data/hitop/iHiTOP_transcripts/HiTOP/Audio_Segments'
@@ -10,30 +11,29 @@ WTC_AUDIO_DIR = '/cronus_data/wtc_clinic/Clinic_Audio_Segments/'
 
 class AudioDataset(torch.utils.data.Dataset):
     
-    def __init__(self, processor, mode='train'):
+    def __init__(self, config, processor, mode='train'):
         self.hitop_segments_df = pd.read_csv('/cronus_data/rrao/hitop/seg_persona.csv')
         self.wtc_segments_df = pd.read_csv('/cronus_data/rrao/wtc_clinic/seg_persona.csv')
         self.processor = processor
         self.mode = mode
 
-        # Normalize Affect, Personality, Mental Health Scores
         if mode == 'train':
-            for feat in ['valence', 'arousal', 'ope', 'agr', 'ext', 'con', 'neu', 'ang_norm', 'anx_norm', 'dep_norm']:
-                wtc_data = np.concatenate([self.wtc_segments_df[feat].to_numpy(), self.wtc_segments_df[feat].to_numpy()])
-                hitop_data = np.concatenate([self.hitop_segments_df[feat].to_numpy(), self.hitop_segments_df[feat].to_numpy()])
-                # Min-Max Normalization [-1 <-> 1]
-                wtc_min, wtc_max = wtc_data.min(), wtc_data.max()
-                self.wtc_segments_df[feat] = 2 * ((self.wtc_segments_df[feat] - wtc_min) / (wtc_max - wtc_min)) - 1
-                hitop_min, hitop_max = hitop_data.min(), hitop_data.max()
-                self.hitop_segments_df[feat] = 2 * ((self.hitop_segments_df[feat] - hitop_min) / (hitop_max - hitop_min)) - 1
-                # # Z-Score Normalization [Mean: 0, Std: 1]
-                # wtc_mean, wtc_std = wtc_data.mean(), wtc_data.std()
-                # self.wtc_segments_df[feat] = (self.wtc_segments_df[feat] - wtc_mean) / wtc_std
-                # hitop_mean, hitop_std = hitop_data.mean(), hitop_data.std()
-                # self.hitop_segments_df[feat] = (self.hitop_segments_df[feat] - hitop_mean) / hitop_std
+            # Load SBERT Embeddings (mean and std)
+            if config.sbert_model_id == 'sentence-transformers/all-MiniLM-L12-v2':
+                sbert_mean = np.load('/cronus_data/rrao/WhiSBERT/embeddings/all-MiniLM-L12-v2/mean_emb.npy')[SBERT_384_DIM_INDECES]
+                sbert_std = np.load('/cronus_data/rrao/WhiSBERT/embeddings/all-MiniLM-L12-v2/std_emb.npy')[SBERT_384_DIM_INDECES]
 
-    def __len__(self):
-        return len(self.hitop_segments_df) + len(self.wtc_segments_df)
+            for i, feat in enumerate(['valence', 'arousal', 'ope', 'agr', 'ext', 'con', 'neu', 'ang_norm', 'anx_norm', 'dep_norm']):
+                psych_feats = np.concatenate([self.wtc_segments_df[feat].to_numpy(), self.hitop_segments_df[feat].to_numpy()])
+                
+                # Z-Score Normalization for the psychological features
+                psych_mean, psych_std = psych_feats.mean(), psych_feats.std()
+                self.wtc_segments_df[feat] = (self.wtc_segments_df[feat] - psych_mean) / psych_std
+                self.hitop_segments_df[feat] = (self.hitop_segments_df[feat] - psych_mean) / psych_std
+
+                # Rescale to match SBERT's Dimensional Distribution
+                self.wtc_segments_df[feat] = self.wtc_segments_df[feat] * sbert_std[i] + sbert_mean[i]
+                self.hitop_segments_df[feat] = self.hitop_segments_df[feat] * sbert_std[i] + sbert_mean[i]
     
     def __getitem__(self, idx):
         audio_dir = HITOP_AUDIO_DIR if idx < len(self.hitop_segments_df) else WTC_AUDIO_DIR
@@ -55,6 +55,9 @@ class AudioDataset(torch.utils.data.Dataset):
             return dataset_name, df.iloc[i]['message_id'], audio_inputs, message
         else:
             return None
+    
+    def __len__(self):
+        return len(self.hitop_segments_df) + len(self.wtc_segments_df)
 
 
 def preprocess_audio(processor, audio_path):

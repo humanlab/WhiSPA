@@ -177,7 +177,7 @@ def main():
     processor, whisbert = load_models(config, args.load_name)
 
     print('\nPreprocessing AudioDataset...')
-    dataset = AudioDataset(processor, mode='inference')
+    dataset = AudioDataset(config, processor, mode='inference')
     print(f'\tTotal dataset size (N): {len(dataset)}')
 
     print('\nStarting Inference...')
