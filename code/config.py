@@ -1,10 +1,10 @@
 CACHE_DIR = '/cronus_data/rrao/cache/'
-CHECKPOINT_DIR = '/cronus_data/rrao/WhiSBERT/models/'
-EMBEDDINGS_DIR = '/cronus_data/rrao/WhiSBERT/embeddings/'
+CHECKPOINT_DIR = '/cronus_data/rrao/WhiSPA/models/'
+EMBEDDINGS_DIR = '/cronus_data/rrao/WhiSPA/embeddings/'
 SBERT_384_DIM_INDECES = [0, 233, 351, 185, 324, 145, 359, 246, 60, 56]
 
 
-class WhiSBERTConfig():
+class WhiSPAConfig():
     def __init__(
         self,
         whisper_model_id: str = 'openai/whisper-tiny',
@@ -25,13 +25,15 @@ class WhiSBERTConfig():
     ):
         whisper_model_id_choices = [
             'openai/whisper-tiny',
-            'openai/whisper-small'
+            'openai/whisper-small',
+            'openai/whisper-medium'
         ]
         sbert_model_id_choices = [
             'sentence-transformers/all-MiniLM-L12-v2',
-            'sentence-transformers/all-mpnet-base-v2'
+            'sentence-transformers/all-mpnet-base-v2',
+            'sentence-transformers/all-roberta-large-v1'
         ]
-        emb_dims_choices = [384, 768]
+        emb_dims_choices = [384, 768, 1024]
 
         try:
             self.emb_dims = emb_dims_choices[whisper_model_id_choices.index(whisper_model_id)]

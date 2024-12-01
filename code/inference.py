@@ -14,17 +14,17 @@ from config import (
     CHECKPOINT_DIR,
     EMBEDDINGS_DIR
 )
-from model import WhiSBERTModel
+from model import WhiSPAModel
 from data import AudioDataset, collate_inference
 
 
 def load_args():
-    parser = argparse.ArgumentParser(description='Script to inference WhiSBERT model (Generates Embeddings)')
+    parser = argparse.ArgumentParser(description='Script to inference WhiSPA model (Generates Embeddings)')
     parser.add_argument(
         '--load_name',
         required=True,
         type=str,
-        help='Specify the filename to the model directory. It will use `config.pth` and `best.pth` saved in: /cronus_data/rrao/WhiSBERT/models/<MODEL_NAME>/`'
+        help='Specify the filename to the model directory. It will use `config.pth` and `best.pth` saved in: /cronus_data/rrao/WhiSPA/models/<MODEL_NAME>/`'
     )
     parser.add_argument(
         "--batch_size",
@@ -53,13 +53,13 @@ def load_args():
 
 
 def load_models(config, load_name):
-    # Load the WhiSBERT and Whisper processor
+    # Load the WhiSPA and Whisper processor
     processor = WhisperProcessor.from_pretrained(
         config.whisper_model_id,
         cache_dir=CACHE_DIR,
         device_map=config.device
     )
-    whisbert = WhiSBERTModel(config).to(config.device)
+    whispa = WhiSPAModel(config).to(config.device)
 
     if config.device == 'cuda':
         if torch.cuda.is_available():
@@ -70,24 +70,24 @@ def load_models(config, load_name):
             print()
         else:
             print("CUDA is not available. Only CPU will be used.\n")
-        whisbert = torch.nn.DataParallel(whisbert, device_ids=gpus)
+        whispa = torch.nn.DataParallel(whispa, device_ids=gpus)
         # sbert = torch.nn.DataParallel(sbert, device_ids=gpus)
 
-    print('Instantiating WhiSBERT with loaded state dict...')
+    print('Instantiating WhiSPA with loaded state dict...')
     state_dict = torch.load(os.path.join(CHECKPOINT_DIR, load_name, 'best.pth'))
     try:
-        whisbert.load_state_dict(state_dict)
+        whispa.load_state_dict(state_dict)
     except:
         state_dict = {k.replace('module.', ''): v for k, v in state_dict.items()}
-        whisbert.load_state_dict(state_dict)
+        whispa.load_state_dict(state_dict)
 
-    return processor, whisbert
+    return processor, whispa
 
 
 def inference(
     dataset,
     processor,
-    whisbert,
+    whispa,
     config,
     load_name
 ):
@@ -112,7 +112,7 @@ def inference(
     df.to_csv(hitop_output_filepath, index=False)
     df.to_csv(wtc_output_filepath, index=False)
 
-    whisbert.eval()
+    whispa.eval()
     start_time = time.time()
     with torch.no_grad():
         for batch in tqdm(data_loader):
@@ -126,8 +126,8 @@ def inference(
                     return_tensors='pt'
                 ).to(config.device)
 
-            # Get WhiSBERT's MEAN/LAST token
-            whis_embs = whisbert(
+            # Get WhiSPA's MEAN/LAST token
+            whis_embs = whispa(
                 batch['audio_inputs'].to(config.device),
                 outputs['input_ids'],
                 outputs['attention_mask']
@@ -150,7 +150,7 @@ def main():
     args = load_args()
 
     print('Preparing Model Configuration...')
-    print('\tInitializing WhiSBERT Config from Load File...')
+    print('\tInitializing WhiSPA Config from Load File...')
     config = torch.load(os.path.join(CHECKPOINT_DIR, args.load_name, 'config.pth'))
     config.shuffle = not args.no_shuffle
     if config.batch_size != args.batch_size:
@@ -162,7 +162,7 @@ def main():
     print(config)
 
     print('\nLoading and Initializing Models with Config...')
-    processor, whisbert = load_models(config, args.load_name)
+    processor, whispa = load_models(config, args.load_name)
 
     print('\nPreprocessing AudioDataset...')
     dataset = AudioDataset(config, processor, mode='inference')
@@ -172,7 +172,7 @@ def main():
     inference(
         dataset,
         processor,
-        whisbert,
+        whispa,
         config,
         args.load_name
     )

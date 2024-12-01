@@ -16,12 +16,12 @@ from matplotlib import pyplot as plt
 from pprint import pprint
 
 from config import (
-    WhiSBERTConfig,
+    WhiSPAConfig,
     CACHE_DIR,
     CHECKPOINT_DIR,
     SBERT_384_DIM_INDECES
 )
-from model import WhiSBERTModel
+from model import WhiSPAModel
 from data import AudioDataset, collate_train
 from utils import (
     mean_pooling,
@@ -35,7 +35,7 @@ BASE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
 
 
 def load_args():
-    parser = argparse.ArgumentParser(description='Script to train WhiSBERT model')
+    parser = argparse.ArgumentParser(description='Script to train WhiSPA model')
     # Training params
     parser.add_argument(
         "--batch_size",
@@ -84,13 +84,13 @@ def load_args():
         '--save_name',
         default='',
         type=str,
-        help='Specify the filename of the model directory. After training, the best state will be saved to: `/cronus_data/rrao/WhiSBERT/models/<MODEL_NAME>/`'
+        help='Specify the filename of the model directory. After training, the best state will be saved to: `/cronus_data/rrao/WhiSPA/models/<MODEL_NAME>/`'
     )
     parser.add_argument(
         '--load_name',
         default='',
         type=str,
-        help='Specify the filename to the model directory. It will use `config.pth` and `best.pth` saved in: /cronus_data/rrao/WhiSBERT/models/<MODEL_NAME>/`'
+        help='Specify the filename to the model directory. It will use `config.pth` and `best.pth` saved in: /cronus_data/rrao/WhiSPA/models/<MODEL_NAME>/`'
     )
     # Hyperparams
     parser.add_argument(
@@ -111,7 +111,7 @@ def load_args():
             'last'
         ],
         type=str,
-        help='Specify the pooling mode to select the embedding from WhiSBERT'
+        help='Specify the pooling mode to select the embedding from WhiSPA'
     )
     parser.add_argument(
         '--with_bidirectionality',
@@ -154,13 +154,13 @@ def load_args():
 
 
 def load_models(config, load_name):
-    # Load the WhiSBERT and Whisper processor
+    # Load the WhiSPA and Whisper processor
     whisper_processor = WhisperProcessor.from_pretrained(
         config.whisper_model_id,
         cache_dir=CACHE_DIR,
         device_map=config.device
     )
-    whisbert = WhiSBERTModel(config).to(config.device)
+    whispa = WhiSPAModel(config).to(config.device)
 
     # Load the pre-trained SentenceTransformer models
     tokenizer = AutoTokenizer.from_pretrained(config.sbert_model_id, cache_dir=CACHE_DIR, TOKENIZERS_PARALLELISM=False)
@@ -175,19 +175,19 @@ def load_models(config, load_name):
             print()
         else:
             print("CUDA is not available. Only CPU will be used.\n")
-        whisbert = torch.nn.DataParallel(whisbert, device_ids=gpus)
+        whispa = torch.nn.DataParallel(whispa, device_ids=gpus)
         sbert = torch.nn.DataParallel(sbert, device_ids=gpus)
 
     if load_name:
-        print('Instantiating WhiSBERT with loaded state dict...')
+        print('Instantiating WhiSPA with loaded state dict...')
         state_dict = torch.load(os.path.join(CHECKPOINT_DIR, load_name, 'best.pth'))
         try:
-            whisbert.load_state_dict(state_dict)
+            whispa.load_state_dict(state_dict)
         except:
             state_dict = {k.replace('module.', ''): v for k, v in state_dict.items()}
-            whisbert.load_state_dict(state_dict)
+            whispa.load_state_dict(state_dict)
 
-    return whisper_processor, whisbert, tokenizer, sbert
+    return whisper_processor, whispa, tokenizer, sbert
 
 
 def plot_loss(train_loss, val_loss, save_name):
@@ -207,7 +207,7 @@ def train(
     train_dataset,
     val_dataset,
     processor,
-    whisbert,
+    whispa,
     tokenizer,
     sbert,
     config,
@@ -230,7 +230,7 @@ def train(
 
     scaler = torch.amp.GradScaler(config.device)
     optimizer = torch.optim.AdamW(
-        whisbert.parameters(),
+        whispa.parameters(),
         lr=config.learning_rate,
         weight_decay=config.weight_decay,
     )
@@ -264,7 +264,7 @@ def train(
 
     start_time = time.time()
     for epoch in range(config.num_epochs):
-        whisbert.train()
+        whispa.train()
         epoch_start_time = time.time()
         epoch_train_loss = 0.0
 
@@ -302,8 +302,8 @@ def train(
                         return_tensors='pt'
                     ).to(config.device)
 
-                # Get WhiSBERT's MEAN/LAST token
-                whis_embs = whisbert(
+                # Get WhiSPA's MEAN/LAST token
+                whis_embs = whispa(
                     batch['audio_inputs'].to(config.device),
                     outputs['input_ids'],
                     outputs['attention_mask']
@@ -317,14 +317,14 @@ def train(
             scaler.scale(loss).backward()
 
             # Gradient clipping (optional but common for stability)
-            torch.nn.utils.clip_grad_norm_(whisbert.parameters(), max_norm=1.0)
+            torch.nn.utils.clip_grad_norm_(whispa.parameters(), max_norm=1.0)
 
             # Unscale gradients and perform optimizer step
             scaler.step(optimizer)
             scaler.update()
             optimizer.zero_grad()
 
-        whisbert.eval()
+        whispa.eval()
         epoch_val_loss = 0.0
 
         with torch.no_grad():
@@ -360,8 +360,8 @@ def train(
                         return_tensors='pt'
                     ).to(config.device)
 
-                    # Get WhiSBERT's MEAN/LAST token
-                    whis_embs = whisbert(
+                    # Get WhiSPA's MEAN/LAST token
+                    whis_embs = whispa(
                         batch['audio_inputs'].to(config.device),
                         outputs['input_ids'],
                         outputs['attention_mask']
@@ -380,12 +380,12 @@ def train(
         # Handle first epoch iteration for validation loss tracking
         if epoch == 0:
             best_val_loss = avg_val_loss
-            best_state = OrderedDict({name: param.clone() for name, param in whisbert.state_dict().items()})
+            best_state = OrderedDict({name: param.clone() for name, param in whispa.state_dict().items()})
         
         # Compare validation loss to preserve the best model state
         if avg_val_loss < best_val_loss:
             best_val_loss = avg_val_loss
-            best_state = OrderedDict({name: param.clone() for name, param in whisbert.state_dict().items()})
+            best_state = OrderedDict({name: param.clone() for name, param in whispa.state_dict().items()})
             best_path = os.path.join(CHECKPOINT_DIR, save_name, 'best.pth')
             torch.save(best_state, best_path)
 
@@ -412,7 +412,7 @@ def main():
 
     print('Preparing Model Configuration...')
     if args.load_name:
-        print('\tInitializing WhiSBERT Config from Load File...')
+        print('\tInitializing WhiSPA Config from Load File...')
         config = torch.load(os.path.join(CHECKPOINT_DIR, args.load_name, 'config.pth'))
         config.shuffle = not args.no_shuffle
         if config.loss != args.loss:
@@ -434,7 +434,7 @@ def main():
     else:
         if args.n_new_dims:
             args.use_psych = True
-        config = WhiSBERTConfig(
+        config = WhiSPAConfig(
             whisper_model_id = args.whisper_model_id,
             pooling_mode = args.pooling_mode,
             with_bidirectionality = args.with_bidirectionality,
@@ -452,14 +452,14 @@ def main():
         )
     print(config)
     if args.save_name:
-        print(f'\nSaving WhiSBERT Config...')
+        print(f'\nSaving WhiSPA Config...')
         save_dir = os.path.join(CHECKPOINT_DIR, args.save_name)
         os.makedirs(save_dir, exist_ok=True)
         config_path = os.path.join(save_dir, 'config.pth')
         torch.save(config, config_path)
 
     print('\nLoading and Initializing Models with Config...')
-    processor, whisbert, tokenizer, sbert = load_models(config, args.load_name)
+    processor, whispa, tokenizer, sbert = load_models(config, args.load_name)
 
     print('\nPreprocessing AudioDataset...')
     dataset = AudioDataset(config, processor, mode='train')
@@ -483,7 +483,7 @@ def main():
         train_dataset,
         val_dataset,
         processor,
-        whisbert,
+        whispa,
         tokenizer,
         sbert,
         config,
@@ -491,11 +491,11 @@ def main():
     )
 
     if args.save_name:
-        print(f'\nSaving WhiSBERT Model...')
+        print(f'\nSaving WhiSPA Model...')
         save_dir = os.path.join(CHECKPOINT_DIR, args.save_name)
         best_path = os.path.join(save_dir, 'best.pth')
         last_path = os.path.join(save_dir, 'last.pth')
-        torch.save(whisbert.state_dict(), last_path)
+        torch.save(whispa.state_dict(), last_path)
         print(f'\tDone.\t`{best_path}`\n')
         print(f'\tDone.\t`{last_path}`\n')
 

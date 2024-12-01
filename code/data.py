@@ -20,7 +20,7 @@ class AudioDataset(torch.utils.data.Dataset):
 
         if mode == 'train' and config.use_psych:
             # Load SBERT Mean and Standard Dimensional Distribution
-            sbert_emb_path = os.path.join('/cronus_data/rrao/WhiSBERT/embeddings', config.sbert_model_id.replace('sentence-transformers/', ''))
+            sbert_emb_path = os.path.join('/cronus_data/rrao/WhiSPA/embeddings', config.sbert_model_id.replace('sentence-transformers/', ''))
             sbert_mean = np.load(os.path.join(sbert_emb_path, 'mean_emb.npy')).mean()
             sbert_std = np.load(os.path.join(sbert_emb_path, 'std_emb.npy')).mean() # THIS IS NOT A TYPO
 

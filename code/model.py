@@ -6,8 +6,7 @@ from config import CACHE_DIR
 from utils import mean_pooling, last_pooling
 
 
-class WhiSBERTModel(torch.nn.Module):
-
+class WhiSPAModel(torch.nn.Module):
 
     def __init__(self, config):
         super().__init__()
