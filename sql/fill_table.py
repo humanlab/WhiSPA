@@ -32,7 +32,7 @@ def main():
     parser = argparse.ArgumentParser(description='DLATK Feature Table Filler')
 
     parser.add_argument("-c", "--credential", required=True, type=str, help="Specify path to credential file")
-    parser.add_argument("-t", "--table_name", required=True, type=str, help="Specify the name of the SQL Table to insert to")
+    parser.add_argument("-t", "--table_name", required=True, type=str, help="Specify the name of the feature table to create")
     parser.add_argument("--csv", required=True, type=str, help="Specify the path to the features file (must be .csv format)")
     parser.add_argument("--no_agg", action="store_true", help="Flag to disallow aggregation of features by `user_id`")
     args = parser.parse_args()
