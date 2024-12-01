@@ -21,8 +21,8 @@ python sql/fill_table.py -c ~/.my.cnf -t "feat\$whisbert384_mean_cossim\$wtc_seg
 python sql/fill_table.py -c ~/.my.cnf -t "feat\$whisbert384_mean_nceclr\$wtc_seg_persona\$user_id" --csv /cronus_data/rrao/WhiSBERT/embeddings/whisbert-384_mean_norm-temp-ce-mean_50_480_1e-5_1e-2/wtc_embeddings.csv \
 && python sql/fill_table.py -c ~/.my.cnf -t "feat\$whisbert384_mean_nceclr\$hitop_seg_persona\$user_id" --csv /cronus_data/rrao/WhiSBERT/embeddings/whisbert-384_mean_norm-temp-ce-mean_50_480_1e-5_1e-2/hitop_embeddings.csv
 
-python sql/fill_table.py -c ~/.my.cnf -t "feat\$whispa384_cs\$wtc_seg_persona\$user_id" --csv /cronus_data/rrao/WhiSBERT/embeddings/whispa-384_cs_50_900_1e-5_1e-2/wtc_embeddings.csv \
-&& python sql/fill_table.py -c ~/.my.cnf -t "feat\$whispa384_cs\$hitop_seg_persona\$user_id" --csv /cronus_data/rrao/WhiSBERT/embeddings/whispa-384_cs_50_900_1e-5_1e-2/hitop_embeddings.csv
+python sql/fill_table.py -c ~/.my.cnf -t "feat\$whispa384_cs\$wtc_seg_persona\$user_id" --csv /cronus_data/rrao/WhiSBERT/embeddings/whispa-384_rep_cs_50_900_1e-5_1e-2/wtc_embeddings.csv \
+&& python sql/fill_table.py -c ~/.my.cnf -t "feat\$whispa384_cs\$hitop_seg_persona\$user_id" --csv /cronus_data/rrao/WhiSBERT/embeddings/whispa-384_rep_cs_50_900_1e-5_1e-2/hitop_embeddings.csv
 python sql/fill_table.py -c ~/.my.cnf -t "feat\$whispa384_nce_75\$wtc_seg_persona\$user_id" --csv /cronus_data/rrao/WhiSBERT/embeddings/whispa-384_nce_75_900_1e-5_1e-2/wtc_embeddings.csv \
 && python sql/fill_table.py -c ~/.my.cnf -t "feat\$whispa384_nce_75\$hitop_seg_persona\$user_id" --csv /cronus_data/rrao/WhiSBERT/embeddings/whispa-384_nce_75_900_1e-5_1e-2/hitop_embeddings.csv
 """

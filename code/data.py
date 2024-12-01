@@ -12,18 +12,19 @@ WTC_AUDIO_DIR = '/cronus_data/wtc_clinic/Clinic_Audio_Segments/'
 class AudioDataset(torch.utils.data.Dataset):
     
     def __init__(self, config, processor, mode='train'):
+        self.config = config
         self.hitop_segments_df = pd.read_csv('/cronus_data/rrao/hitop/seg_persona.csv')
         self.wtc_segments_df = pd.read_csv('/cronus_data/rrao/wtc_clinic/seg_persona.csv')
         self.processor = processor
         self.mode = mode
 
-        if mode == 'train':
-            # Load SBERT Embeddings (mean and std)
-            if config.sbert_model_id == 'sentence-transformers/all-MiniLM-L12-v2':
-                sbert_mean = np.load('/cronus_data/rrao/WhiSBERT/embeddings/all-MiniLM-L12-v2/mean_emb.npy')[SBERT_384_DIM_INDECES]
-                sbert_std = np.load('/cronus_data/rrao/WhiSBERT/embeddings/all-MiniLM-L12-v2/std_emb.npy')[SBERT_384_DIM_INDECES]
+        if mode == 'train' and config.use_psych:
+            # Load SBERT Mean and Standard Dimensional Distribution
+            sbert_emb_path = os.path.join('/cronus_data/rrao/WhiSBERT/embeddings', config.sbert_model_id.replace('sentence-transformers/', ''))
+            sbert_mean = np.load(os.path.join(sbert_emb_path, 'mean_emb.npy')).mean()
+            sbert_std = np.load(os.path.join(sbert_emb_path, 'std_emb.npy')).mean() # THIS IS NOT A TYPO
 
-            for i, feat in enumerate(['valence', 'arousal', 'ope', 'agr', 'ext', 'con', 'neu', 'ang_norm', 'anx_norm', 'dep_norm']):
+            for feat in ['valence', 'arousal', 'ope', 'agr', 'ext', 'con', 'neu', 'ang_norm', 'anx_norm', 'dep_norm']:
                 psych_feats = np.concatenate([self.wtc_segments_df[feat].to_numpy(), self.hitop_segments_df[feat].to_numpy()])
                 
                 # Z-Score Normalization for the psychological features
@@ -32,8 +33,8 @@ class AudioDataset(torch.utils.data.Dataset):
                 self.hitop_segments_df[feat] = (self.hitop_segments_df[feat] - psych_mean) / psych_std
 
                 # Rescale to match SBERT's Dimensional Distribution
-                self.wtc_segments_df[feat] = self.wtc_segments_df[feat] * sbert_std[i] + sbert_mean[i]
-                self.hitop_segments_df[feat] = self.hitop_segments_df[feat] * sbert_std[i] + sbert_mean[i]
+                self.wtc_segments_df[feat] = self.wtc_segments_df[feat] * sbert_std + sbert_mean
+                self.hitop_segments_df[feat] = self.hitop_segments_df[feat] * sbert_std + sbert_mean
     
     def __getitem__(self, idx):
         audio_dir = HITOP_AUDIO_DIR if idx < len(self.hitop_segments_df) else WTC_AUDIO_DIR
@@ -50,7 +51,11 @@ class AudioDataset(torch.utils.data.Dataset):
         audio_inputs = preprocess_audio(self.processor, audio_path)
         message = df.iloc[i]['message']
         if self.mode == 'train':
-            return audio_inputs, message, torch.from_numpy(df.iloc[0][4:].to_numpy(dtype=np.float32)).unsqueeze(0)
+            return (
+                audio_inputs,
+                message,
+                torch.from_numpy(df.iloc[0][4:].to_numpy(dtype=np.float32)).unsqueeze(0) if self.config.use_psych else None
+            )
         elif self.mode == 'inference':
             return dataset_name, df.iloc[i]['message_id'], audio_inputs, message
         else:

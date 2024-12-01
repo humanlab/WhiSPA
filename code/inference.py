@@ -10,22 +10,12 @@ from tqdm import tqdm
 from pprint import pprint
 
 from config import (
-    WhiSBERTConfig,
     CACHE_DIR,
     CHECKPOINT_DIR,
     EMBEDDINGS_DIR
 )
 from model import WhiSBERTModel
 from data import AudioDataset, collate_inference
-
-
-"""
-CUDA_VISIBLE_DEVICES=1,2,3 python code/inference.py \
---load_name whispa-384_mean_cos-sim_50_900_1e-5_1e-2 \
---batch_size 3096 \
---num_workers 16 \
---no_shuffle
-"""
 
 
 def load_args():
@@ -117,7 +107,7 @@ def inference(
         f'OutputError: The output filepath(s) already exist.\n\t{hitop_output_filepath}\n\t{wtc_output_filepath}'
     )
  
-    cols = ['message_id'] + [f'f{i:03d}' for i in range(config.emb_dim + config.n_new_dims)]
+    cols = ['message_id'] + [f'f{i:03d}' for i in range(config.emb_dims + config.n_new_dims)]
     df = pd.DataFrame(columns=cols)
     df.to_csv(hitop_output_filepath, index=False)
     df.to_csv(wtc_output_filepath, index=False)
@@ -143,8 +133,6 @@ def inference(
                 outputs['attention_mask']
             )
             whis_embs = F.normalize(whis_embs, p=2, dim=1)
-            # if pa_embs is not None:
-            #     whis_embs = torch.cat([whis_embs, pa_embs], axis=1)
 
             for m_idx, message_id in enumerate(batch['message_id']):
                 emb = whis_embs[m_idx].cpu().numpy().tolist()

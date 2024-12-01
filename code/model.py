@@ -23,28 +23,50 @@ class WhiSBERTModel(torch.nn.Module):
             cache_dir=CACHE_DIR,
         )
 
-        # Use HuggingFace library for:
-        # - "sentence-transformers/all-MiniLM-L12-v2"
-        # - "sentence-transformers/all-mpnet-base-v2"
         self.sbert_model = AutoModel.from_pretrained(
             config.sbert_model_id,
             cache_dir=CACHE_DIR
         )
 
-        if config.use_sbert_encoder:
+        if config.with_bidirectionality:
             self.sbert_encoder = self.sbert_model.encoder.to(config.device)
 
         if config.n_new_dims:
-            # Learnable Emotion (PA) Projection Matrix (D x 10)
-            self.projection = torch.nn.Linear(config.emb_dim, config.n_new_dims).to(config.device)
-            # Dynamic Loss Balancing
-            # self.log_sigma_cos = torch.nn.Parameter(torch.tensor(0.0))
-            # self.log_sigma_mse = torch.nn.Parameter(torch.tensor(0.0))
+            # Learnable Projection Matrix (D x 10)
+            self.projection = torch.nn.Linear(config.emb_dims, config.n_new_dims).to(config.device)
 
         self.whisper_model.to(config.device)
         self.linear = self.sbert_model.pooler.dense.to(config.device)
         self.activation = self.sbert_model.pooler.activation.to(config.device)
     
+
+    def forward(self, audio_inputs, text_input_ids, text_attention_mask):
+        embs = self.whisper_model(
+            audio_inputs,
+            decoder_input_ids=text_input_ids,
+            decoder_attention_mask=text_attention_mask
+        ).last_hidden_state
+        
+        if self.config.with_bidirectionality:
+            embs = self.sbert_encoder(
+                embs,
+                attention_mask=self.sbert_model.get_extended_attention_mask(
+                    text_attention_mask,
+                    embs.size()[:-1]
+                ),
+                head_mask=[None] * self.sbert_model.config.num_hidden_layers
+            )[0]
+        
+        embs = self.pooler(embs, text_attention_mask)
+        embs = self.linear(embs)
+        embs = self.activation(embs)
+
+        if self.config.n_new_dims:
+            pysch_embs = self.activation(self.projection(embs))
+            embs = torch.cat([embs, pysch_embs], dim=1)
+        
+        return embs
+        
 
     def expand_model(self):
         # WHISPER ENCODER EXPANSION
@@ -86,35 +108,6 @@ class WhiSBERTModel(torch.nn.Module):
             layer.final_layer_norm = expand_layer_norm(layer.final_layer_norm, self.config.n_new_dims)
 
         self.whisper_model.decoder.layer_norm = expand_layer_norm(self.whisper_model.decoder.layer_norm, self.config.n_new_dims)
-        
-
-    def forward(self, audio_inputs, text_input_ids, text_attention_mask):
-        embs = self.whisper_model(
-            audio_inputs,
-            decoder_input_ids=text_input_ids,
-            decoder_attention_mask=text_attention_mask
-        ).last_hidden_state
-        
-        if self.config.use_sbert_encoder:
-            embs = self.sbert_encoder(
-                embs,
-                attention_mask=self.sbert_model.get_extended_attention_mask(
-                    text_attention_mask,
-                    embs.size()[:-1]
-                ),
-                head_mask=[None] * self.sbert_model.config.num_hidden_layers
-            )[0]
-        
-        embs = self.pooler(embs, text_attention_mask)
-        embs = self.linear(embs)
-        embs = self.activation(embs)
-
-        if self.config.n_new_dims:
-            # pa = self.activation(self.projection(embs))
-            # return torch.cat([embs, pa], dim=1)
-            return embs
-        else:
-            return embs
 
 
 def expand_conv1d_layer(conv1d_layer, added_in_channels=None, added_out_channels=None):

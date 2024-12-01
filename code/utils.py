@@ -40,10 +40,10 @@ def nce_cont_loss(whis_embs, sbert_embs, tau=0.1, pooling_mode='sum'):
         Helpful link I used for reference:
         https://jamesmccaffrey.wordpress.com/2022/04/11/an-example-of-normalized-temperature-scaled-cross-entropy-loss/
         
-        Derived from the paper:
+        Implemented from the paper:
         "A Simple Framework for Contrastive Learning of Visual Representations" (2020), Chen, et al.
     """
-    combined = torch.cat([whis_embs, sbert_embs], dim=0)  # shape (2 * batch_size, emb_dim)
+    combined = torch.cat([whis_embs, sbert_embs], dim=0)  # shape (2 * batch_size, emb_dims)
     combined = F.normalize(combined, dim=1)
 
     # Define positive pairs (each original data with its corresponding augmented data)

@@ -98,7 +98,6 @@ def load_args():
         default='openai/whisper-tiny',
         choices=[
             'openai/whisper-tiny',
-            'openai/whisper-base',
             'openai/whisper-small'
         ],
         type=str,
@@ -115,26 +114,9 @@ def load_args():
         help='Specify the pooling mode to select the embedding from WhiSBERT'
     )
     parser.add_argument(
-        '--loss',
-        default='CS',
-        choices=[
-            'CS',
-            'NCE',
-            'WCSMSE',
-        ],
-        type=str,
-        help='Specify the type of loss criteria during training'
-    )
-    parser.add_argument(
-        "--tau",
-        default=0.1,
-        type=float,
-        help="The temperature value for the contrastive loss. Note this will only be applied when using: `Normalized Temperature-Scaled Cross Entropy Loss`"
-    )
-    parser.add_argument(
-        '--use_sbert_encoder',
+        '--with_bidirectionality',
         action='store_true',
-        help='Specify whether to use the additional encoder layers for WhiSBERT'
+        help='Specify whether to use the additional bidirectional encoder layers'
     )
     parser.add_argument(
         "--n_new_dims",
@@ -144,68 +126,30 @@ def load_args():
             10,
         ],
         type=int,
-        help="The number of additional dimensions to be added to WhiSBERT's transformer weights"
+        help="The number of additional dimensions to be added"
     )
-    # parser.add_argument(
-    #     "--new_encoder_n_layers",
-    #     default=12,
-    #     type=int,
-    #     help="The number of new encoder layers for WhiSBERT"
-    # )
-    # parser.add_argument(
-    #     "--new_encoder_n_heads",
-    #     default=12,
-    #     type=int,
-    #     help="The number of new encoder attention heads for WhiSBERT"
-    # )
-    # parser.add_argument(
-    #     "--new_encoder_ffn_dim",
-    #     default=3072,
-    #     type=int,
-    #     help="The number of new encoder FFN dimensions for WhiSBERT"
-    # )
-    # parser.add_argument(
-    #     '--activation_function',
-    #     default='gelu',
-    #     type=str,
-    #     help='The activation function for WhiSBERT [Default: `GELU`]'
-    # )
-    # parser.add_argument(
-    #     "--eps",
-    #     default=1e-5,
-    #     type=float,
-    #     help="The epsilon value for LayerNorm for WhiSBERT"
-    # )
-    # parser.add_argument(
-    #     "--dropout",
-    #     default=0.1,
-    #     type=float,
-    #     help="The dropout for WhiSBERT"
-    # )
-    # parser.add_argument(
-    #     "--encoder_layerdrop",
-    #     default=0.1,
-    #     type=float,
-    #     help="The encoder layer dropout for WhiSBERT"
-    # )
-    # parser.add_argument(
-    #     "--decoder_layerdrop",
-    #     default=0.1,
-    #     type=float,
-    #     help="The decoder layer dropout for WhiSBERT"
-    # )
-    # parser.add_argument(
-    #     "--attention_dropout",
-    #     default=0.1,
-    #     type=float,
-    #     help="The attention dropout for WhiSBERT"
-    # )
-    # parser.add_argument(
-    #     "--activation_dropout",
-    #     default=0.1,
-    #     type=float,
-    #     help="The activation dropout for WhiSBERT"
-    # )
+    parser.add_argument(
+        '--use_psych',
+        action='store_true',
+        help='Specify whether to use psychological features during alignment'
+    )
+    parser.add_argument(
+        '--loss',
+        default='CS',
+        choices=[
+            'CS',
+            'NCE',
+            'MOW',
+        ],
+        type=str,
+        help='Specify the type of loss criteria during training'
+    )
+    parser.add_argument(
+        "--tau",
+        default=0.1,
+        type=float,
+        help="The temperature value for NCE loss. `Default value set to 0.1`"
+    )
     return parser.parse_args()
 
 
@@ -304,13 +248,14 @@ def train(
     elif config.loss == 'NCE':
         loss_func = nce_cont_loss
 
-    elif config.loss == 'WCSMSE':
+    elif config.loss == 'MOW':
         loss_func = None # Not implemented yet
 
-    if config.n_new_dims:
-        # These are the indices of the least correlated features for psychological outcomes
+    # WhiSPA-384 with SBERT dimensional replacement
+    if config.use_psych and not config.n_new_dims:
+        # These are the indices of the 10 least correlated SBERT dimensions for psychological features
         if config.sbert_model_id == 'sentence-transformers/all-MiniLM-L12-v2':
-            pa_indices = torch.tensor(SBERT_384_DIM_INDECES).to(config.device)
+            psych_indeces = torch.tensor(SBERT_384_DIM_INDECES).to(config.device)
 
     sbert.eval()
     train_loss = []
@@ -340,10 +285,12 @@ def train(
                 with torch.no_grad():
                     sbert_embs = sbert(**sbert_inputs).last_hidden_state
                 sbert_embs = mean_pooling(sbert_embs, sbert_inputs['attention_mask'])
-                if config.n_new_dims:
-                    pa_gt = batch['outcomes'].to(config.device)
-                    # sbert_embs = torch.cat([sbert_embs, pa_gt], dim=1)
-                    sbert_embs[torch.arange(sbert_embs.shape[0]).unsqueeze(1), pa_indices] = pa_gt
+                if config.use_psych:
+                    psych_gt = batch['outcomes'].to(config.device)
+                    if config.n_new_dims:
+                        sbert_embs = torch.cat([sbert_embs, psych_gt], dim=1)
+                    else:
+                        sbert_embs[torch.arange(sbert_embs.shape[0]).unsqueeze(1), psych_indeces] = psych_gt
 
                 # Whisper-based tokenization
                 with torch.no_grad():
@@ -397,10 +344,12 @@ def train(
                     # Get SBERT's embedding
                     sbert_embs = sbert(**sbert_inputs).last_hidden_state
                     sbert_embs = mean_pooling(sbert_embs, sbert_inputs['attention_mask'])
-                    if config.n_new_dims:
-                        pa_gt = batch['outcomes'].to(config.device)
-                        # sbert_embs = torch.cat([sbert_embs, pa_gt], dim=1)
-                        sbert_embs[torch.arange(sbert_embs.shape[0]).unsqueeze(1), pa_indices] = pa_gt
+                    if config.use_psych:
+                        psych_gt = batch['outcomes'].to(config.device)
+                        if config.n_new_dims:
+                            sbert_embs = torch.cat([sbert_embs, psych_gt], dim=1)
+                        else:
+                            sbert_embs[torch.arange(sbert_embs.shape[0]).unsqueeze(1), psych_indeces] = psych_gt
 
                     # Whisper-based tokenization
                     outputs = processor.tokenizer(
@@ -483,13 +432,16 @@ def main():
         if config.device != args.device:
             config.device = args.device
     else:
+        if args.n_new_dims:
+            args.use_psych = True
         config = WhiSBERTConfig(
             whisper_model_id = args.whisper_model_id,
             pooling_mode = args.pooling_mode,
+            with_bidirectionality = args.with_bidirectionality,
+            n_new_dims= args.n_new_dims,
+            use_psych=True if args.n_new_dims else args.use_psych,
             loss = args.loss,
             tau = args.tau,
-            use_sbert_encoder = args.use_sbert_encoder,
-            n_new_dims= args.n_new_dims,
             batch_size = args.batch_size,
             num_workers = args.num_workers,
             num_epochs = args.num_epochs,
