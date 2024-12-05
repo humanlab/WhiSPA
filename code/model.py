@@ -20,7 +20,7 @@ class WhiSPAModel(torch.nn.Module):
         self.whisper_model = WhisperModel.from_pretrained(
             config.whisper_model_id,
             cache_dir=CACHE_DIR,
-        )
+        ).to(config.device)
 
         self.sbert_model = AutoModel.from_pretrained(
             config.sbert_model_id,
@@ -34,7 +34,6 @@ class WhiSPAModel(torch.nn.Module):
             # Learnable Projection Matrix (D x 10)
             self.projection = torch.nn.Linear(config.emb_dims, config.n_new_dims).to(config.device)
 
-        self.whisper_model.to(config.device)
         self.linear = self.sbert_model.pooler.dense.to(config.device)
         self.activation = self.sbert_model.pooler.activation.to(config.device)
     

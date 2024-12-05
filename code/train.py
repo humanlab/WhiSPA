@@ -19,14 +19,14 @@ from config import (
     WhiSPAConfig,
     CACHE_DIR,
     CHECKPOINT_DIR,
-    SBERT_384_DIM_INDECES
 )
 from model import WhiSPAModel
 from data import AudioDataset, collate_train
 from utils import (
     mean_pooling,
     cos_sim_loss,
-    nce_cont_loss
+    nce_cont_loss,
+    mow_loss,
 )
 
 
@@ -150,6 +150,11 @@ def load_args():
         type=float,
         help="The temperature value for NCE loss. `Default value set to 0.1`"
     )
+    parser.add_argument(
+        '--freeze',
+        action='store_true',
+        help='Specify whether to freeze the Whisper backbone'
+    )
     return parser.parse_args()
 
 
@@ -173,10 +178,10 @@ def load_models(config, load_name):
             for i in gpus:
                 print(f"\tGPU {i}: {torch.cuda.get_device_name(i)}")
             print()
+            whispa = torch.nn.DataParallel(whispa, device_ids=gpus)
+            sbert = torch.nn.DataParallel(sbert, device_ids=gpus)
         else:
             print("CUDA is not available. Only CPU will be used.\n")
-        whispa = torch.nn.DataParallel(whispa, device_ids=gpus)
-        sbert = torch.nn.DataParallel(sbert, device_ids=gpus)
 
     if load_name:
         print('Instantiating WhiSPA with loaded state dict...')
@@ -251,12 +256,6 @@ def train(
     elif config.loss == 'MOW':
         loss_func = None # Not implemented yet
 
-    # WhiSPA-384 with SBERT dimensional replacement
-    if config.use_psych and not config.n_new_dims:
-        # These are the indices of the 10 least correlated SBERT dimensions for psychological features
-        if config.sbert_model_id == 'sentence-transformers/all-MiniLM-L12-v2':
-            psych_indeces = torch.tensor(SBERT_384_DIM_INDECES).to(config.device)
-
     sbert.eval()
     train_loss = []
     val_loss = []
@@ -281,16 +280,18 @@ def train(
             # Forward pass
             with torch.amp.autocast(config.device):
 
-                # Get SBERT's embedding
+                # Get SBERT's MEAN embedding
                 with torch.no_grad():
                     sbert_embs = sbert(**sbert_inputs).last_hidden_state
                 sbert_embs = mean_pooling(sbert_embs, sbert_inputs['attention_mask'])
                 if config.use_psych:
                     psych_gt = batch['outcomes'].to(config.device)
                     if config.n_new_dims:
+                        # Concatenation
                         sbert_embs = torch.cat([sbert_embs, psych_gt], dim=1)
                     else:
-                        sbert_embs[torch.arange(sbert_embs.shape[0]).unsqueeze(1), psych_indeces] = psych_gt
+                        # Replace first 10 dims
+                        sbert_embs[:, :10] = psych_gt
 
                 # Whisper-based tokenization
                 with torch.no_grad():
@@ -341,15 +342,17 @@ def train(
                 # Forward pass
                 with torch.amp.autocast(config.device):
 
-                    # Get SBERT's embedding
+                    # Get SBERT's MEAN embedding
                     sbert_embs = sbert(**sbert_inputs).last_hidden_state
                     sbert_embs = mean_pooling(sbert_embs, sbert_inputs['attention_mask'])
                     if config.use_psych:
                         psych_gt = batch['outcomes'].to(config.device)
                         if config.n_new_dims:
+                            # Concatenation
                             sbert_embs = torch.cat([sbert_embs, psych_gt], dim=1)
                         else:
-                            sbert_embs[torch.arange(sbert_embs.shape[0]).unsqueeze(1), psych_indeces] = psych_gt
+                            # Replace first 10 dims
+                            sbert_embs[:, :10] = psych_gt
 
                     # Whisper-based tokenization
                     outputs = processor.tokenizer(
@@ -439,7 +442,7 @@ def main():
             pooling_mode = args.pooling_mode,
             with_bidirectionality = args.with_bidirectionality,
             n_new_dims= args.n_new_dims,
-            use_psych=True if args.n_new_dims else args.use_psych,
+            use_psych=args.use_psych,
             loss = args.loss,
             tau = args.tau,
             batch_size = args.batch_size,
@@ -478,17 +481,17 @@ def main():
         print(f'WARNING: Overwriting existing model directory!')
         print(f'\t"{args.save_name}" already exists in "{CHECKPOINT_DIR}"')
 
-    print('\nStarting Training...')
-    train(
-        train_dataset,
-        val_dataset,
-        processor,
-        whispa,
-        tokenizer,
-        sbert,
-        config,
-        args.save_name
-    )
+    # print('\nStarting Training...')
+    # train(
+    #     train_dataset,
+    #     val_dataset,
+    #     processor,
+    #     whispa,
+    #     tokenizer,
+    #     sbert,
+    #     config,
+    #     args.save_name
+    # )
 
     if args.save_name:
         print(f'\nSaving WhiSPA Model...')

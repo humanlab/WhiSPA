@@ -15,10 +15,10 @@ python sql/csv2sql.py -c ~/.my.cnf -t "hitop_aad" --csv code/aad_hitop.csv
 python sql/csv2sql.py -c ~/.my.cnf -t "wtc_uaad" --csv code/uaad_wtc.csv
 python sql/csv2sql.py -c ~/.my.cnf -t "hitop_uaad" --csv code/uaad_hitop.csv
 
-python sql/csv2sql.py -c ~/.my.cnf -t "wtc_segment_persona" --csv /cronus_data/rrao/wtc_clinic/seg_persona.csv
-python sql/csv2sql.py -c ~/.my.cnf -t "hitop_segment_persona" --csv /cronus_data/rrao/hitop/seg_persona.csv
-python sql/csv2sql.py -c ~/.my.cnf -t "wtc_user_persona" --csv /cronus_data/rrao/wtc_clinic/user_agg_outcomes.csv
-python sql/csv2sql.py -c ~/.my.cnf -t "hitop_user_persona" --csv /cronus_data/rrao/hitop/user_agg_outcomes.csv
+python sql/csv2sql.py -c ~/.my.cnf -t "wtc_seg_persona" --csv /cronus_data/rrao/wtc_clinic/whispa_dataset.csv \
+&& python sql/csv2sql.py -c ~/.my.cnf -t "hitop_seg_persona" --csv /cronus_data/rrao/hitop/whispa_dataset.csv \
+&& python sql/csv2sql.py -c ~/.my.cnf -t "wtc_user_persona" --csv /cronus_data/rrao/wtc_clinic/user_outcomes.csv \
+&& python sql/csv2sql.py -c ~/.my.cnf -t "hitop_user_persona" --csv /cronus_data/rrao/hitop/user_outcomes.csv
 """
 
 

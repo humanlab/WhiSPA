@@ -10,12 +10,13 @@ BASE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)))
 
 
 """
-python sql2csv.py -c ~/.my.cnf -t "msgs_whisper_large_dia2_p1" --csv msgs_whisper_large_dia2_p1.csv
-python sql2csv.py -c ~/.my.cnf -t "msgs_whisper_large_dia2_p2" --csv msgs_whisper_large_dia2_p2.csv
-python sql2csv.py -c ~/.my.cnf -t "msgs_whisper_large_dia2_p3" --csv msgs_whisper_large_dia2_p3.csv
-python sql2csv.py -c ~/.my.cnf -t "feat\$p_ridg_aff_int\$msgs_whisper_large_dia2_p1\$message_id" --csv feat\$p_ridg_aff_int\$msgs_whisper_large_dia2_p1\$message_id.csv
-python sql2csv.py -c ~/.my.cnf -t "feat\$p_ridg_aff_int\$msgs_whisper_large_dia2_p2\$message_id" --csv feat\$p_ridg_aff_int\$msgs_whisper_large_dia2_p2\$message_id.csv
-python sql2csv.py -c ~/.my.cnf -t "feat\$p_ridg_aff_int\$msgs_whisper_large_dia2_p3\$message_id" --csv feat\$p_ridg_aff_int\$msgs_whisper_large_dia2_p3\$message_id.csv
+python sql/sql2csv.py -c ~/.my.cnf -t "msgs_whisper_large_dia2_p1" --csv msgs_whisper_large_dia2_p1.csv
+python sql/sql2csv.py -c ~/.my.cnf -t "msgs_whisper_large_dia2_p2" --csv msgs_whisper_large_dia2_p2.csv
+python sql/sql2csv.py -c ~/.my.cnf -t "msgs_whisper_large_dia2_p3" --csv msgs_whisper_large_dia2_p3.csv
+python sql/sql2csv.py -c ~/.my.cnf -t "feat\$cat_dd_depAnxAng_w\$wtc_seg_persona\$message_id\$1gra" --csv aad_wtc.csv
+python sql/sql2csv.py -c ~/.my.cnf -t "feat\$cat_dd_depAnxAng_w\$hitop_seg_persona\$message_id\$1gra" --csv aad_hitop.csv
+python sql/sql2csv.py -c ~/.my.cnf -t "feat\$cat_dd_affInt_w\$wtc_seg_persona\$message_id\$1gra" --csv va_wtc.csv
+python sql/sql2csv.py -c ~/.my.cnf -t "feat\$cat_dd_affInt_w\$hitop_seg_persona\$message_id\$1gra" --csv va_hitop.csv
 """
 
 

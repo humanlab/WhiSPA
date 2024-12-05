@@ -61,6 +61,8 @@ def nce_cont_loss(whis_embs, sbert_embs, tau=0.1, pooling_mode='sum'):
     return losses.sum() if pooling_mode == 'sum' else losses.mean()
 
 
+def mow_loss(whis_embs, sbert_embs, psych_embs, psych_gts):
+    pass
 # # Supervised Contrastive Loss
 # def scl_loss(whis_embs, sbert_embs, labels, tau=0.10):
 #     # This is a supervised contrastive loss objective which requires

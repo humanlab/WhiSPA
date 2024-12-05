@@ -1,7 +1,6 @@
 CACHE_DIR = '/cronus_data/rrao/cache/'
 CHECKPOINT_DIR = '/cronus_data/rrao/WhiSPA/models/'
 EMBEDDINGS_DIR = '/cronus_data/rrao/WhiSPA/embeddings/'
-SBERT_384_DIM_INDECES = [0, 233, 351, 185, 324, 145, 359, 246, 60, 56]
 
 
 class WhiSPAConfig():
@@ -12,7 +11,7 @@ class WhiSPAConfig():
         with_bidirectionality: bool = False,
         n_new_dims: int = 0,
         use_psych: bool = False,
-        loss: str = 'cos_sim',
+        loss: str = 'CS',
         tau: float = 0.1,
         batch_size: int = 1,
         num_workers: int = 1,

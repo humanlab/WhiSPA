@@ -24,7 +24,7 @@ def load_args():
         '--load_name',
         required=True,
         type=str,
-        help='Specify the filename to the model directory. It will use `config.pth` and `best.pth` saved in: /cronus_data/rrao/WhiSPA/models/<MODEL_NAME>/`'
+        help='Specify the filename to the model directory. It will use `config.pth` and `best.pth` saved in: /cronus_data/rrao/WhiSPA/models/<MODEL_NAME>/`\nOr specify the HuggingFace model id for a SBERT autoencoder from the sentence-transformers/ library. `Ex. sentence-transformers/all-MiniLM-L12-v2`'
     )
     parser.add_argument(
         "--batch_size",
@@ -46,6 +46,10 @@ def load_args():
     parser.add_argument(
         '--device',
         default='cuda',
+        choices=[
+            'cuda',
+            'cpu'
+        ],
         type=str,
         help='Specify whether to use CPU or GPU'
     )
@@ -71,7 +75,6 @@ def load_models(config, load_name):
         else:
             print("CUDA is not available. Only CPU will be used.\n")
         whispa = torch.nn.DataParallel(whispa, device_ids=gpus)
-        # sbert = torch.nn.DataParallel(sbert, device_ids=gpus)
 
     print('Instantiating WhiSPA with loaded state dict...')
     state_dict = torch.load(os.path.join(CHECKPOINT_DIR, load_name, 'best.pth'))
@@ -107,7 +110,7 @@ def inference(
         f'OutputError: The output filepath(s) already exist.\n\t{hitop_output_filepath}\n\t{wtc_output_filepath}'
     )
  
-    cols = ['message_id'] + [f'f{i:03d}' for i in range(config.emb_dims + config.n_new_dims)]
+    cols = ['message_id'] + [f'f{i:04d}' for i in range(config.emb_dims + config.n_new_dims)]
     df = pd.DataFrame(columns=cols)
     df.to_csv(hitop_output_filepath, index=False)
     df.to_csv(wtc_output_filepath, index=False)
