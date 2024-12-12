@@ -15,14 +15,14 @@ from tqdm import tqdm
 from matplotlib import pyplot as plt
 from pprint import pprint
 
-from config import (
+from whispa_config import (
     WhiSPAConfig,
     CACHE_DIR,
     CHECKPOINT_DIR,
 )
-from model import WhiSPAModel
-from data import AudioDataset, collate_train
-from utils import (
+from whispa_model import WhiSPAModel
+from whispa_data import AudioDataset, collate_train
+from whispa_utils import (
     mean_pooling,
     cos_sim_loss,
     nce_cont_loss,
@@ -481,17 +481,17 @@ def main():
         print(f'WARNING: Overwriting existing model directory!')
         print(f'\t"{args.save_name}" already exists in "{CHECKPOINT_DIR}"')
 
-    # print('\nStarting Training...')
-    # train(
-    #     train_dataset,
-    #     val_dataset,
-    #     processor,
-    #     whispa,
-    #     tokenizer,
-    #     sbert,
-    #     config,
-    #     args.save_name
-    # )
+    print('\nStarting Training...')
+    train(
+        train_dataset,
+        val_dataset,
+        processor,
+        whispa,
+        tokenizer,
+        sbert,
+        config,
+        args.save_name
+    )
 
     if args.save_name:
         print(f'\nSaving WhiSPA Model...')

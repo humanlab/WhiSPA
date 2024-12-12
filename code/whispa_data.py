@@ -2,10 +2,11 @@ import os
 import numpy as np
 import pandas as pd
 import torch, torchaudio
+from torch.nn.utils.rnn import pad_sequence
 import transformers
 
 
-HITOP_AUDIO_DIR = '/cronus_data/hitop/iHiTOP_transcripts/HiTOP/Audio_Segments'
+HITOP_AUDIO_DIR = '/cronus_data/hitop/iHiTOP_transcripts/HiTOP/Audio_Segments/'
 WTC_AUDIO_DIR = '/cronus_data/wtc_clinic/Clinic_Audio_Segments/'
 
 
@@ -85,17 +86,33 @@ def preprocess_audio(audio_path):
 
 
 def collate_train(batch):
+    try:
+        audio_inputs = torch.cat([a for a, _, _ in batch], dim=0) if isinstance(batch[0][0], torch.Tensor) else None
+    except Exception:
+        audio_inputs = pad_sequence(
+            [a.squeeze(0) for a, _, _ in batch],
+            batch_first=True,
+            padding_value=0.0
+        )
     return {
-        'audio_inputs': torch.cat([a for a, _, _ in batch], dim=0) if isinstance(batch[0][0], torch.Tensor) else None,
+        'audio_inputs': audio_inputs,
         'message': [m for _, m, _  in batch],
         'outcomes': torch.cat([o for _, _, o in batch], dim=0) if isinstance(batch[0][2], torch.Tensor) else None
     }
 
 
 def collate_inference(batch):
+    try:
+        audio_inputs = torch.cat([a for _, _, a, _ in batch], dim=0) if isinstance(batch[0][2], torch.Tensor) else None
+    except Exception:
+        audio_inputs = pad_sequence(
+            [a.squeeze(0) for _, _, a, _ in batch],
+            batch_first=True,
+            padding_value=0.0
+        )
     return {
         'dataset_name': [d for d, _, _, _ in batch],
         'message_id': [i for _, i, _, _ in batch],
-        'audio_inputs': torch.cat([a for _, _, a, _ in batch], dim=0) if isinstance(batch[0][2], torch.Tensor) else None,
+        'audio_inputs': audio_inputs,
         'message': [m for _, _, _, m  in batch]
     }

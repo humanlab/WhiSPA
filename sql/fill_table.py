@@ -5,29 +5,6 @@ import pandas as pd
 from mysql import connector
 
 
-"""
-python sql/fill_table.py -c ~/.my.cnf -t "feat\$sbert384\$wtc_seg_persona\$user_id" --csv /cronus_data/rrao/WhiSPA/embeddings/all-MiniLM-L12-v2/wtc_embeddings.csv \
-&& python sql/fill_table.py -c ~/.my.cnf -t "feat\$sbert384\$hitop_seg_persona\$user_id" --csv /cronus_data/rrao/WhiSPA/embeddings/all-MiniLM-L12-v2/hitop_embeddings.csv
-python sql/fill_table.py -c ~/.my.cnf -t "feat\$whisper384\$wtc_seg_persona\$user_id" --csv /cronus_data/rrao/WhiSPA/embeddings/whisper-384/wtc_embeddings.csv \
-&& python sql/fill_table.py -c ~/.my.cnf -t "feat\$whisper384\$hitop_seg_persona\$user_id" --csv /cronus_data/rrao/WhiSPA/embeddings/whisper-384/hitop_embeddings.csv
-
-python sql/fill_table.py -c ~/.my.cnf -t "feat\$whisa384_cs\$wtc_seg_persona\$user_id" --csv /cronus_data/rrao/WhiSPA/embeddings/whisa-384_cs_50_900_1e-5_1e-2/wtc_embeddings.csv \
-&& python sql/fill_table.py -c ~/.my.cnf -t "feat\$whisa384_cs\$hitop_seg_persona\$user_id" --csv /cronus_data/rrao/WhiSPA/embeddings/whisa-384_cs_50_900_1e-5_1e-2/hitop_embeddings.csv
-python sql/fill_table.py -c ~/.my.cnf -t "feat\$whisper384_mean_nceclr\$wtc_seg_persona\$user_id" --csv /cronus_data/rrao/WhiSPA/embeddings/whisper-384_mean_norm-temp-ce-sum_50_512_1e-5_1e-2/wtc_embeddings.csv \
-&& python sql/fill_table.py -c ~/.my.cnf -t "feat\$whisper384_mean_nceclr\$hitop_seg_persona\$user_id" --csv /cronus_data/rrao/WhiSPA/embeddings/whisper-384_mean_norm-temp-ce-sum_50_512_1e-5_1e-2/hitop_embeddings.csv
-
-python sql/fill_table.py -c ~/.my.cnf -t "feat\$whisbert384_mean_cossim\$wtc_seg_persona\$user_id" --csv /cronus_data/rrao/WhiSPA/embeddings/whisbert-384_mean_cos-sim_50_480_1e-5_1e-2/wtc_embeddings.csv \
-&& python sql/fill_table.py -c ~/.my.cnf -t "feat\$whisbert384_mean_cossim\$hitop_seg_persona\$user_id" --csv /cronus_data/rrao/WhiSPA/embeddings/whisbert-384_mean_cos-sim_50_480_1e-5_1e-2/hitop_embeddings.csv
-python sql/fill_table.py -c ~/.my.cnf -t "feat\$whisbert384_mean_nceclr\$wtc_seg_persona\$user_id" --csv /cronus_data/rrao/WhiSPA/embeddings/whisbert-384_mean_norm-temp-ce-mean_50_480_1e-5_1e-2/wtc_embeddings.csv \
-&& python sql/fill_table.py -c ~/.my.cnf -t "feat\$whisbert384_mean_nceclr\$hitop_seg_persona\$user_id" --csv /cronus_data/rrao/WhiSPA/embeddings/whisbert-384_mean_norm-temp-ce-mean_50_480_1e-5_1e-2/hitop_embeddings.csv
-
-python sql/fill_table.py -c ~/.my.cnf -t "feat\$whispa394_cs\$wtc_seg_persona\$user_id" --csv /cronus_data/rrao/WhiSPA/embeddings/whispa-394_cs_50_900_1e-5_1e-2/wtc_embeddings.csv \
-&& python sql/fill_table.py -c ~/.my.cnf -t "feat\$whispa394_cs\$hitop_seg_persona\$user_id" --csv /cronus_data/rrao/WhiSPA/embeddings/whispa-394_cs_50_900_1e-5_1e-2/hitop_embeddings.csv
-python sql/fill_table.py -c ~/.my.cnf -t "feat\$whispa394_nnce\$wtc_seg_persona\$user_id" --csv /cronus_data/rrao/WhiSPA/embeddings/whispa-394_nnce_50_900_1e-5_1e-2/wtc_embeddings.csv \
-&& python sql/fill_table.py -c ~/.my.cnf -t "feat\$whispa394_nnce\$hitop_seg_persona\$user_id" --csv /cronus_data/rrao/WhiSPA/embeddings/whispa-394_nnce_50_900_1e-5_1e-2/hitop_embeddings.csv
-"""
-
-
 def main():
     parser = argparse.ArgumentParser(description='DLATK Feature Table Filler')
 
@@ -116,6 +93,8 @@ def driver(connection, cursor, table_name, csv_path, no_agg):
 
     # Commit the changes to the database
     connection.commit()
+
+    print(f'\nCreated table `{table_name}` and finished inserting features...\n')
 
     # Close the cursor and connection
     cursor.close()

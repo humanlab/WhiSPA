@@ -16,15 +16,15 @@ import pandas as pd
 from tqdm import tqdm
 from pprint import pprint
 
-from config import (
+from whispa_config import (
     CACHE_DIR,
     CHECKPOINT_DIR,
     EMBEDDINGS_DIR,
     WhiSPAConfig
 )
-from utils import mean_pooling
-from model import WhiSPAModel
-from data import AudioDataset, collate_inference
+from whispa_utils import mean_pooling
+from whispa_model import WhiSPAModel
+from whispa_data import AudioDataset, collate_inference
 
 
 def load_args():
@@ -176,9 +176,12 @@ def inference(
             
             elif isinstance(processor, transformers.models.wav2vec2.processing_wav2vec2.Wav2Vec2Processor):
                 # Get Wav2Vec's MEAN embedding
-                wav_embs = model(input_values=outputs['audio_inputs'].to(config.device)).last_hidden_state.mean(1)
-                print(wav_embs.shape)
-                print(wav_embs.norm())
+                try:
+                    wav_embs = model(input_values=batch['audio_inputs'].to(config.device))
+                    wav_embs = wav_embs.last_hidden_state.mean(1)
+                    embs = F.normalize(wav_embs, p=2, dim=1)
+                except Exception as e:
+                    print(Warning(e))
 
             else:
                 # Whisper-based tokenization
@@ -197,8 +200,6 @@ def inference(
                     outputs['attention_mask']
                 )
                 embs = F.normalize(whis_embs, p=2, dim=1)
-
-            break
 
             for m_idx, message_id in enumerate(batch['message_id']):
                 emb = embs[m_idx].cpu().numpy().tolist()
@@ -243,10 +244,6 @@ def main():
     dataset = AudioDataset(config, processor, mode='inference')
     print(f'\tTotal dataset size (N): {len(dataset)}')
 
-    print(type(model))
-    print(type(processor))
-    print(type(tokenizer))
-    print('Everything till here seems to be fine...')
     print('\nStarting Inference...')
     inference(
         dataset,
