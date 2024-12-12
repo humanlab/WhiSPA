@@ -1,6 +1,5 @@
 import torch
 from transformers import AutoModel, WhisperModel
-# from sentence_transformers import SentenceTransformer
 
 from whispa_config import CACHE_DIR
 from whispa_utils import mean_pooling, last_pooling

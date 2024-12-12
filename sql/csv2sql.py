@@ -10,10 +10,10 @@ BASE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)))
 
 
 """
-python sql/csv2sql.py -c ~/.my.cnf -t "wtc_aad" --csv code/aad_wtc.csv
-python sql/csv2sql.py -c ~/.my.cnf -t "hitop_aad" --csv code/aad_hitop.csv
-python sql/csv2sql.py -c ~/.my.cnf -t "wtc_uaad" --csv code/uaad_wtc.csv
-python sql/csv2sql.py -c ~/.my.cnf -t "hitop_uaad" --csv code/uaad_hitop.csv
+python sql/csv2sql.py -c ~/.my.cnf -t "wtc_aad" --csv src/aad_wtc.csv
+python sql/csv2sql.py -c ~/.my.cnf -t "hitop_aad" --csv src/aad_hitop.csv
+python sql/csv2sql.py -c ~/.my.cnf -t "wtc_uaad" --csv src/uaad_wtc.csv
+python sql/csv2sql.py -c ~/.my.cnf -t "hitop_uaad" --csv src/uaad_hitop.csv
 
 python sql/csv2sql.py -c ~/.my.cnf -t "wtc_seg_persona" --csv /cronus_data/rrao/wtc_clinic/whispa_dataset.csv \
 && python sql/csv2sql.py -c ~/.my.cnf -t "hitop_seg_persona" --csv /cronus_data/rrao/hitop/whispa_dataset.csv \
