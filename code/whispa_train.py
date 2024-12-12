@@ -10,7 +10,6 @@ from transformers import (
     AutoModel,
     WhisperProcessor
 )
-from sentence_transformers import SentenceTransformer
 from tqdm import tqdm
 from matplotlib import pyplot as plt
 from pprint import pprint
