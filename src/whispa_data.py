@@ -25,7 +25,7 @@ class AudioDataset(torch.utils.data.Dataset):
             sbert_mean = np.load(os.path.join(sbert_emb_path, 'mean_emb.npy')).mean()
             sbert_std = np.load(os.path.join(sbert_emb_path, 'std_emb.npy')).mean() # THIS IS NOT A TYPO
 
-            for feat in ['valence', 'arousal', 'ope', 'agr', 'ext', 'con', 'neu', 'ang', 'anx', 'dep']:
+            for feat in ['ope', 'agr', 'ext', 'con', 'neu', 'valence', 'arousal', 'ang', 'anx', 'dep']:
                 # Z-Score Normalization for the psychological features
                 self.hitop_segments_df[feat] = (self.hitop_segments_df[feat] - self.hitop_segments_df[feat].mean()) / self.hitop_segments_df[feat].std()
                 self.wtc_segments_df[feat] = (self.wtc_segments_df[feat] - self.wtc_segments_df[feat].mean()) / self.wtc_segments_df[feat].std()
@@ -58,7 +58,7 @@ class AudioDataset(torch.utils.data.Dataset):
             return (
                 audio_inputs,
                 df.iloc[i]['message'],
-                torch.from_numpy(df.iloc[0][4:].to_numpy(dtype=np.float32)).unsqueeze(0) if self.config.use_psych else None
+                torch.from_numpy(df.iloc[i][4:].to_numpy(dtype=np.float32)).unsqueeze(0) if self.config.use_psych else None
             )
         elif self.mode == 'inference':
             return (
