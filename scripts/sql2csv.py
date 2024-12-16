@@ -3,6 +3,7 @@ import argparse
 import numpy as np
 import pandas as pd
 from mysql import connector
+from sqlalchemy import create_engine
 
 
 DEBUG = True
@@ -29,8 +30,8 @@ def main():
     args = parser.parse_args()
 
     # Create a connection to the MySQL server
-    connection, cursor = get_sql_credentials(args.credential)
-    driver(connection, cursor, args.table_name, args.csv)
+    engine = get_sql_credentials(args.credential)
+    driver(engine, args.table_name, args.csv)
     
 
 # Verifies user's credentials and returns a MySQL Connection object
@@ -44,24 +45,28 @@ def get_sql_credentials(filename):
             if line.startswith('password'):
                 pwd = line[9:].strip()
 
-    connection = connector.connect(
-        host='localhost',
-        user=usr,
-        password=pwd,
-        database='HiTOP'
-    )
-    return connection, connection.cursor()
+    # connection = connector.connect(
+    #     host='localhost',
+    #     user=usr,
+    #     password=pwd,
+    #     database='HiTOP'
+    # )
+    # return connection, connection.cursor()
+    engine = create_engine(f"mysql+mysqlconnector://{usr}:{pwd}@localhost/HiTOP")
+    return engine
 
 
-def driver(connection, cursor, table_name, csv_path):
+def driver(engine, table_name, csv_path):
     # SQL query to insert data into table
     query = f"SELECT * FROM {table_name}"
-    df = pd.read_sql(query, connection)
+    df = pd.read_sql(query, engine)
     df.to_csv(csv_path, index=False)
+    print(f'Done. File created: {csv_path}')
 
-    # Close the cursor and connection
-    cursor.close()
-    connection.close()
+    # No need to explicitly close SQLAlchemy engine (handled automatically)
+    # # Close the cursor and connection
+    # cursor.close()
+    # connection.close()
 
 
 def log(msg):
