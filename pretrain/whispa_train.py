@@ -83,14 +83,15 @@ def load_args():
         '--save_name',
         default='',
         type=str,
-        help='Specify the filename of the model directory. After training, the best state will be saved to: `/cronus_data/rrao/WhiSPA/models/<MODEL_NAME>/`'
+        help='Specify the filename of the model directory. After training, the best state will be saved to: `<CHECKPOINT_DIR>/<MODEL_NAME>/`'
     )
     parser.add_argument(
         '--load_name',
         default='',
         type=str,
-        help='Specify the filename to the model directory. It will use `config.pth` and `best.pth` saved in: /cronus_data/rrao/WhiSPA/models/<MODEL_NAME>/`'
+        help='Specify the filename to the model directory. It will use `config.pth` and `best.pth` saved in: <CHECKPOINT_DIR>/<MODEL_NAME>/`'
     )
+    
     # Hyperparams
     parser.add_argument(
         '--whisper_model_id',

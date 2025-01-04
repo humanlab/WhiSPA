@@ -2,9 +2,9 @@ import os, argparse
 import pandas as pd
 import numpy as np
 from scipy.stats import ttest_rel
+from dotenv import load_dotenv
 
-
-TABLES_DIR = '/cronus_data/rrao/WhiSPA/tables/'
+load_dotenv()
 
 
 def paired_ttest(gt_df, baseline_df, pred_df):
@@ -49,9 +49,9 @@ def main():
     args = parser.parse_args()
 
     # Prepare filepaths
-    gt_path = os.path.join(TABLES_DIR, args.gt_csv)
-    baseline_path = os.path.join(TABLES_DIR, args.baseline_csv)
-    pred_path = os.path.join(TABLES_DIR, args.pred_csv)
+    gt_path = os.path.join(os.getenv('TABLES_DIR'), args.gt_csv)
+    baseline_path = os.path.join(os.getenv('TABLES_DIR'), args.baseline_csv)
+    pred_path = os.path.join(os.getenv('TABLES_DIR'), args.pred_csv)
 
     # Load the CSV files
     gt_df = pd.read_csv(gt_path).sort_values(by='user_id').reset_index(drop=True)

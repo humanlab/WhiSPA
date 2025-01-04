@@ -3,6 +3,9 @@ import argparse
 import numpy as np
 import pandas as pd
 from mysql import connector
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 def main():
@@ -43,9 +46,9 @@ def driver(connection, cursor, table_name, csv_path, no_agg):
     group_id_dtype = 'VARCHAR(24)'
     if not no_agg:
         if os.path.basename(csv_path).startswith('hitop'):
-            segments_path = '/cronus_data/rrao/hitop/seg_persona.csv'
+            segments_path = os.getenv('HITOP_DATA_DIR')
         elif os.path.basename(csv_path).startswith('wtc'):
-            segments_path = '/cronus_data/rrao/wtc_clinic/seg_persona.csv'
+            segments_path = os.getenv('WTC_DATA_DIR')
             group_id_dtype = 'INT'
     
     try:
@@ -74,7 +77,7 @@ def driver(connection, cursor, table_name, csv_path, no_agg):
 
 
     if no_agg:
-        segments_300 = pd.read_csv('/cronus_data/rrao/WhiSPA/whispa_affect_segments.csv')['message_id']
+        segments_300 = pd.read_csv(f'{os.getenv("WHISPA_DIR")}whispa_affect_segments.csv')['message_id']
 
         wtc_emb_df = pd.read_csv(os.path.join(os.path.dirname(csv_path), 'wtc_embeddings.csv'))
         wtc_emb_df = wtc_emb_df[wtc_emb_df['message_id'].isin(segments_300)]

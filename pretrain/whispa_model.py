@@ -1,11 +1,22 @@
+import os
 import torch
 from transformers import AutoModel, WhisperModel
+from huggingface_hub import PyTorchModelHubMixin, snapshot_download
+from dotenv import load_dotenv
 
-from whispa_config import CACHE_DIR
+load_dotenv()
+
+from whispa_config import WhiSPAConfig
 from whispa_utils import mean_pooling, last_pooling
 
 
-class WhiSPAModel(torch.nn.Module):
+class WhiSPAModel(
+    torch.nn.Module,
+    PyTorchModelHubMixin,
+    repo_url='whispa',
+    pipeline_tag='feature-extraction',
+    license='mit'
+):
 
     def __init__(self, config):
         super().__init__()
@@ -18,12 +29,12 @@ class WhiSPAModel(torch.nn.Module):
 
         self.whisper_model = WhisperModel.from_pretrained(
             config.whisper_model_id,
-            cache_dir=CACHE_DIR,
+            cache_dir=os.getenv('CACHE_DIR'),
         ).to(config.device)
 
         self.sbert_model = AutoModel.from_pretrained(
             config.sbert_model_id,
-            cache_dir=CACHE_DIR
+            cache_dir=os.getenv('CACHE_DIR')
         )
 
         if config.with_bidirectionality:
@@ -35,7 +46,7 @@ class WhiSPAModel(torch.nn.Module):
 
         self.linear = self.sbert_model.pooler.dense.to(config.device)
         self.activation = self.sbert_model.pooler.activation.to(config.device)
-    
+
 
     def forward(self, audio_inputs, text_input_ids, text_attention_mask):
         embs = self.whisper_model(
@@ -105,6 +116,36 @@ class WhiSPAModel(torch.nn.Module):
             layer.final_layer_norm = expand_layer_norm(layer.final_layer_norm, self.config.n_new_dims)
 
         self.whisper_model.decoder.layer_norm = expand_layer_norm(self.whisper_model.decoder.layer_norm, self.config.n_new_dims)
+
+    
+    def _save_pretrained(self, local_dir: str):
+        os.makedirs(local_dir, exist_ok=True)
+        self.config.save_pretrained(local_dir)
+        torch.save(self.state_dict(), os.path.join(local_dir, 'pytorch_model.bin'))
+
+
+    @classmethod
+    def _from_pretrained(cls, local_dir, **kwargs):
+        print("**Inside _from_pretrained** with local_dir=", local_dir)
+        config = WhiSPAConfig.from_pretrained(local_dir)
+
+        model = cls(config)
+        state_dict = torch.load(os.path.join(local_dir, "pytorch_model.bin"), map_location="cpu")
+        model.load_state_dict(state_dict)
+
+        return model
+    
+
+    @classmethod
+    def from_pretrained(cls, model_id, revision=None, cache_dir=None, force_download=False, **hub_kwargs):
+        local_dir = snapshot_download(
+            repo_id=model_id,
+            revision=revision,
+            cache_dir=cache_dir,
+            force_download=force_download,
+            **hub_kwargs
+        )
+        return cls._from_pretrained(local_dir=local_dir)
 
 
 def expand_conv1d_layer(conv1d_layer, added_in_channels=None, added_out_channels=None):

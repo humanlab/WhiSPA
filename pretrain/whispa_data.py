@@ -4,24 +4,23 @@ import pandas as pd
 import torch, torchaudio
 from torch.nn.utils.rnn import pad_sequence
 import transformers
+from dotenv import load_dotenv
 
-
-HITOP_AUDIO_DIR = '/cronus_data/hitop/iHiTOP_transcripts/HiTOP/Audio_Segments/'
-WTC_AUDIO_DIR = '/cronus_data/wtc_clinic/Clinic_Audio_Segments/'
+load_dotenv()
 
 
 class AudioDataset(torch.utils.data.Dataset):
     
     def __init__(self, config, processor, mode='train'):
         self.config = config
-        self.hitop_segments_df = pd.read_csv('/cronus_data/rrao/hitop/whispa_dataset.csv')
-        self.wtc_segments_df = pd.read_csv('/cronus_data/rrao/wtc_clinic/whispa_dataset.csv')
+        self.hitop_segments_df = pd.read_csv(f'{os.getenv("HITOP_DATA_DIR")}whispa_dataset.csv')
+        self.wtc_segments_df = pd.read_csv(f'{os.getenv("WTC_DATA_DIR")}whispa_dataset.csv')
         self.processor = processor
         self.mode = mode
 
         if mode == 'train' and config.use_psych:
             # Load SBERT Mean and Standard Dimensional Distribution
-            sbert_emb_path = os.path.join('/cronus_data/rrao/WhiSPA/embeddings', config.sbert_model_id.replace('sentence-transformers/', ''))
+            sbert_emb_path = os.path.join(os.getenv('EMBEDDINGS_DIR'), config.sbert_model_id.replace('sentence-transformers/', ''))
             sbert_mean = np.load(os.path.join(sbert_emb_path, 'mean_emb.npy')).mean()
             sbert_std = np.load(os.path.join(sbert_emb_path, 'std_emb.npy')).mean() # THIS IS NOT A TYPO
 
@@ -35,7 +34,7 @@ class AudioDataset(torch.utils.data.Dataset):
                 self.wtc_segments_df[feat] = self.wtc_segments_df[feat] * sbert_std + sbert_mean
     
     def __getitem__(self, idx):
-        audio_dir = HITOP_AUDIO_DIR if idx < len(self.hitop_segments_df) else WTC_AUDIO_DIR
+        audio_dir = os.getenv('HITOP_AUDIO_DIR') if idx < len(self.hitop_segments_df) else os.getenv('WTC_AUDIO_DIR')
         if idx < len(self.hitop_segments_df):
             i = idx
             df = self.hitop_segments_df

@@ -9,21 +9,6 @@ DEBUG = True
 BASE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)))
 
 
-"""
-python sql/csv2sql.py -c ~/.my.cnf -t "wtc_aad" --csv src/aad_wtc.csv
-python sql/csv2sql.py -c ~/.my.cnf -t "hitop_aad" --csv src/aad_hitop.csv
-python sql/csv2sql.py -c ~/.my.cnf -t "wtc_uaad" --csv src/uaad_wtc.csv
-python sql/csv2sql.py -c ~/.my.cnf -t "hitop_uaad" --csv src/uaad_hitop.csv
-
-python sql/csv2sql.py -c ~/.my.cnf -t "seg_300_affect_labeled" --csv /cronus_data/rrao/WhiSPA/whispa_affect_segments.csv
-
-python sql/csv2sql.py -c ~/.my.cnf -t "wtc_seg_persona" --csv /cronus_data/rrao/wtc_clinic/whispa_dataset.csv \
-&& python sql/csv2sql.py -c ~/.my.cnf -t "hitop_seg_persona" --csv /cronus_data/rrao/hitop/whispa_dataset.csv \
-&& python sql/csv2sql.py -c ~/.my.cnf -t "wtc_user_persona" --csv /cronus_data/rrao/wtc_clinic/user_outcomes.csv \
-&& python sql/csv2sql.py -c ~/.my.cnf -t "hitop_user_persona" --csv /cronus_data/rrao/hitop/user_outcomes.csv
-"""
-
-
 def main():
     parser = argparse.ArgumentParser(description='Script to Convert CSV to SQL file')
 

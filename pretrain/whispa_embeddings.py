@@ -14,14 +14,11 @@ from transformers import (
 )
 import pandas as pd
 from tqdm import tqdm
-from pprint import pprint
+from dotenv import load_dotenv
 
-from whispa_config import (
-    CACHE_DIR,
-    CHECKPOINT_DIR,
-    EMBEDDINGS_DIR,
-    WhiSPAConfig
-)
+load_dotenv()
+
+from whispa_config import WhiSPAConfig
 from whispa_utils import mean_pooling
 from whispa_model import WhiSPAModel
 from whispa_data import AudioDataset, collate_inference
@@ -33,7 +30,7 @@ def load_args():
         '--load_name',
         required=True,
         type=str,
-        help='Specify the filename to the model directory. It will use `config.pth` and `best.pth` saved in: /cronus_data/rrao/WhiSPA/models/<MODEL_NAME>/`\nOr specify the HuggingFace model id for a SBERT autoencoder from the sentence-transformers/ library. `Ex. sentence-transformers/all-MiniLM-L12-v2`'
+        help='Specify the filename to the model directory. It will use `config.pth` and `best.pth` saved in: <CHECKPOINT_DIR>/<MODEL_NAME>/`\nOr specify the HuggingFace model id for a SBERT autoencoder from the sentence-transformers/ library. `Ex. sentence-transformers/all-MiniLM-L12-v2`'
     )
     parser.add_argument(
         "--batch_size",
@@ -70,18 +67,18 @@ def load_models(config, load_name):
     tokenizer = None
     if 'sentence-transformers/' in load_name:
         # Load the pre-trained SentenceTransformer model and tokenizer
-        model = AutoModel.from_pretrained(load_name, cache_dir=CACHE_DIR).to(config.device)
+        model = AutoModel.from_pretrained(load_name, cache_dir=os.getenv('CACHE_DIR')).to(config.device)
         tokenizer = AutoTokenizer.from_pretrained(
             load_name,
-            cache_dir=CACHE_DIR,
+            cache_dir=os.getenv('CACHE_DIR'),
             TOKENIZERS_PARALLELISM=False
         )
     elif 'wav2vec' in load_name:
         # Load the Wav2Vec model and processor
-        model = Wav2Vec2Model.from_pretrained(load_name, cache_dir=CACHE_DIR).to(config.device)
+        model = Wav2Vec2Model.from_pretrained(load_name, cache_dir=os.getenv('CACHE_DIR')).to(config.device)
         processor = Wav2Vec2Processor.from_pretrained(
             load_name,
-            cache_dir=CACHE_DIR,
+            cache_dir=os.getenv('CACHE_DIR'),
             device_map=config.device
         )
     else:
@@ -89,7 +86,7 @@ def load_models(config, load_name):
         model = WhiSPAModel(config).to(config.device)
         processor = WhisperProcessor.from_pretrained(
             config.whisper_model_id,
-            cache_dir=CACHE_DIR,
+            cache_dir=os.getenv('CACHE_DIR'),
             device_map=config.device
         )
 
@@ -106,7 +103,7 @@ def load_models(config, load_name):
 
     if not ('sentence-transformers/' in load_name or 'wav2vec' in load_name):
         print('Instantiating WhiSPA with loaded state dict...')
-        state_dict = torch.load(os.path.join(CHECKPOINT_DIR, load_name, 'best.pth'))
+        state_dict = torch.load(os.path.join(os.getenv('CHECKPOINT_DIR'), load_name, 'best.pth'))
         try:
             model.load_state_dict(state_dict)
         except:
@@ -142,7 +139,7 @@ def inference(
         config.emb_dims = model.module.config.hidden_size
     
     # Handle output file and paths
-    output_path = os.path.join(EMBEDDINGS_DIR, load_name)
+    output_path = os.path.join(os.getenv('EMBEDDINGS_DIR'), load_name)
     os.makedirs(output_path, exist_ok=True)
     hitop_output_filepath = os.path.join(output_path, f'hitop_embeddings.csv')
     wtc_output_filepath = os.path.join(output_path, f'wtc_embeddings.csv')
@@ -227,7 +224,7 @@ def main():
         )
     else:
         print('\tInitializing WhiSPA Config from Load File...')
-        config = torch.load(os.path.join(CHECKPOINT_DIR, args.load_name, 'config.pth'))
+        config = torch.load(os.path.join(os.getenv('CHECKPOINT_DIR'), args.load_name, 'config.pth'))
         config.shuffle = not args.no_shuffle
         if config.batch_size != args.batch_size:
             config.batch_size = args.batch_size
