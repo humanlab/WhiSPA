@@ -6,8 +6,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from whispa_config import WhiSPAConfig
-from whispa_utils import mean_pooling, last_pooling
+from pretrain.whispa_config import WhiSPAConfig
+from pretrain.whispa_utils import mean_pooling, last_pooling
 
 
 class WhiSPAModel(

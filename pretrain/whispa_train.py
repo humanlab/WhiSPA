@@ -19,9 +19,9 @@ from whispa_config import (
     CACHE_DIR,
     CHECKPOINT_DIR,
 )
-from whispa_model import WhiSPAModel
-from whispa_data import AudioDataset, collate_train
-from whispa_utils import (
+from pretrain.whispa_model import WhiSPAModel
+from pretrain.whispa_data import AudioDataset, collate_train
+from pretrain.whispa_utils import (
     mean_pooling,
     cos_sim_loss,
     nce_cont_loss,

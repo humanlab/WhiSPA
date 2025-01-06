@@ -18,10 +18,10 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from whispa_config import WhiSPAConfig
-from whispa_utils import mean_pooling
-from whispa_model import WhiSPAModel
-from whispa_data import AudioDataset, collate_inference
+from pretrain.whispa_config import WhiSPAConfig
+from pretrain.whispa_utils import mean_pooling
+from pretrain.whispa_model import WhiSPAModel
+from pretrain.whispa_data import AudioDataset, collate_inference
 
 
 def load_args():
