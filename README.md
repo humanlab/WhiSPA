@@ -55,7 +55,7 @@ WhiSPA is trained using a student-teacher contrastive alignment approach. The Wh
 
 ## Inference
 
-We have pushed our pretrained model to HuggingFace at the link [Jarhatz/whispa_394_v1](https://huggingface.co/Jarhatz/whispa_394_v1). You can run inference on a directory of audio files or a singular audio file using our audio encoder script.
+We have pushed our pretrained model to HuggingFace with the `model_id` [Jarhatz/whispa_394_v1](https://huggingface.co/Jarhatz/whispa_394_v1). You can run inference on a directory of audio files or a singular audio file using our audio encoder script.
 
 ```bash
 python inference/encode_audio.py \
