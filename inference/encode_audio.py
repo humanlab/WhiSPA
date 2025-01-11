@@ -38,12 +38,6 @@ def load_args():
         help='Path to specific audio file or directory containing audio files'
     )
     parser.add_argument(
-        '--cache_dir',
-        required=False,
-        type=str,
-        help='Path to specific cache directory for storing model weights'
-    )
-    parser.add_argument(
         '--device',
         default='cpu',
         choices=[
@@ -56,19 +50,16 @@ def load_args():
     return parser.parse_args()
 
 
-def load_model(model_id, cache_dir, device):
+def load_model(model_id, device):
     processor = WhisperProcessor.from_pretrained(
         'openai/whisper-tiny',
-        cache_dir=cache_dir,
         device_map=device
     )
     whisper = WhisperForConditionalGeneration.from_pretrained(
-        'openai/whisper-tiny',
-        cache_dir=cache_dir,
+        'openai/whisper-tiny'
     ).to(device)
     whispa = WhiSPAModel.from_pretrained(
-        model_id,
-        cache_dir=cache_dir,
+        model_id
     ).to(device)
     return processor, whisper, whispa
 
@@ -76,10 +67,9 @@ def load_model(model_id, cache_dir, device):
 def encode_audios(
     audio_filepaths,
     model_id,
-    cache_dir=None,
     device='cpu'
 ):
-    processor, whisper, whispa = load_model(model_id, cache_dir, device)
+    processor, whisper, whispa = load_model(model_id, device)
     
     embs = []
 
@@ -144,6 +134,6 @@ if __name__ == '__main__':
     args = load_args()
     huggingface_hub.login(args.hf_token)
 
-    embs = encode_audios(args.audio_filepaths, args.model_id, args.cache_dir, args.device)
+    embs = encode_audios(args.audio_filepaths, args.model_id, args.device)
 
     print(embs.shape)
