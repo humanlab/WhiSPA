@@ -1,6 +1,10 @@
+import sys, os
+# Add the root directory of the project to the Python path
+BASE_DIR = os.path.join(os.path.dirname(__file__), '..')
+sys.path.append(os.path.abspath(BASE_DIR))
+
 import time
 from datetime import timedelta
-import os
 import argparse
 import torch
 import torch.nn.functional as F

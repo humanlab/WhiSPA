@@ -1,7 +1,11 @@
+import sys, os
+# Add the root directory of the project to the Python path
+BASE_DIR = os.path.join(os.path.dirname(__file__), '..')
+sys.path.append(os.path.abspath(BASE_DIR))
+
 import time
 from datetime import timedelta
 from collections import OrderedDict
-import os
 import argparse
 import torch
 import torch.nn.functional as F
@@ -14,11 +18,7 @@ from tqdm import tqdm
 from matplotlib import pyplot as plt
 from pprint import pprint
 
-from whispa_config import (
-    WhiSPAConfig,
-    CACHE_DIR,
-    CHECKPOINT_DIR,
-)
+from pretrain.whispa_config import WhiSPAConfig
 from pretrain.whispa_model import WhiSPAModel
 from pretrain.whispa_data import AudioDataset, collate_train
 from pretrain.whispa_utils import (
@@ -30,7 +30,6 @@ from pretrain.whispa_utils import (
 
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
-BASE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
 
 
 def load_args():
@@ -162,14 +161,14 @@ def load_models(config, load_name):
     # Load the WhiSPA and Whisper processor
     whisper_processor = WhisperProcessor.from_pretrained(
         config.whisper_model_id,
-        cache_dir=CACHE_DIR,
+        cache_dir=os.getenv('CACHE_DIR'),
         device_map=config.device
     )
     whispa = WhiSPAModel(config).to(config.device)
 
     # Load the pre-trained SentenceTransformer models
-    tokenizer = AutoTokenizer.from_pretrained(config.sbert_model_id, cache_dir=CACHE_DIR, TOKENIZERS_PARALLELISM=False)
-    sbert = AutoModel.from_pretrained(config.sbert_model_id, cache_dir=CACHE_DIR).to(config.device)
+    tokenizer = AutoTokenizer.from_pretrained(config.sbert_model_id, cache_dir=os.getenv('CACHE_DIR'), TOKENIZERS_PARALLELISM=False)
+    sbert = AutoModel.from_pretrained(config.sbert_model_id, cache_dir=os.getenv('CACHE_DIR')).to(config.device)
 
     if config.device == 'cuda':
         if torch.cuda.is_available():
@@ -185,7 +184,7 @@ def load_models(config, load_name):
 
     if load_name:
         print('Instantiating WhiSPA with loaded state dict...')
-        state_dict = torch.load(os.path.join(CHECKPOINT_DIR, load_name, 'best.pth'))
+        state_dict = torch.load(os.path.join(os.getenv('CHECKPOINT_DIR'), load_name, 'best.pth'))
         try:
             whispa.load_state_dict(state_dict)
         except:
@@ -389,7 +388,7 @@ def train(
         if avg_val_loss < best_val_loss:
             best_val_loss = avg_val_loss
             best_state = OrderedDict({name: param.clone() for name, param in whispa.state_dict().items()})
-            best_path = os.path.join(CHECKPOINT_DIR, save_name, 'best.pth')
+            best_path = os.path.join(os.getenv('CHECKPOINT_DIR'), save_name, 'best.pth')
             torch.save(best_state, best_path)
 
         train_loss.append(avg_train_loss)
@@ -416,7 +415,7 @@ def main():
     print('Preparing Model Configuration...')
     if args.load_name:
         print('\tInitializing WhiSPA Config from Load File...')
-        config = torch.load(os.path.join(CHECKPOINT_DIR, args.load_name, 'config.pth'))
+        config = torch.load(os.path.join(os.getenv('CHECKPOINT_DIR'), args.load_name, 'config.pth'))
         config.shuffle = not args.no_shuffle
         if config.loss != args.loss:
             config.loss = args.loss
@@ -456,7 +455,7 @@ def main():
     print(config)
     if args.save_name:
         print(f'\nSaving WhiSPA Config...')
-        save_dir = os.path.join(CHECKPOINT_DIR, args.save_name)
+        save_dir = os.path.join(os.getenv('CHECKPOINT_DIR'), args.save_name)
         os.makedirs(save_dir, exist_ok=True)
         config_path = os.path.join(save_dir, 'config.pth')
         torch.save(config, config_path)
@@ -479,7 +478,7 @@ def main():
 
     if args.save_name and os.path.exists(args.save_name):
         print(f'WARNING: Overwriting existing model directory!')
-        print(f'\t"{args.save_name}" already exists in "{CHECKPOINT_DIR}"')
+        print(f'\t"{args.save_name}" already exists in "{os.getenv("CHECKPOINT_DIR")}"')
 
     print('\nStarting Training...')
     train(
@@ -495,7 +494,7 @@ def main():
 
     if args.save_name:
         print(f'\nSaving WhiSPA Model...')
-        save_dir = os.path.join(CHECKPOINT_DIR, args.save_name)
+        save_dir = os.path.join(os.getenv('CHECKPOINT_DIR'), args.save_name)
         best_path = os.path.join(save_dir, 'best.pth')
         last_path = os.path.join(save_dir, 'last.pth')
         torch.save(whispa.state_dict(), last_path)
