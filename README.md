@@ -1,10 +1,52 @@
 # WhiSPA: Whisper Semantically and Psychologically Aligned
 
-This is the code repository for the [WhiSPA paper](https:google.com).
+<img src="visuals/WhiSPA_Spirit_Figure.jpg" alt="WhiSPA Spirit Figure" width="50%"/>
 
-![WhiSPA Spirit]("visuals/WhiSPA_Spirit_Figure.png")
+This is the code repository for the [WhiSPA paper](https://google.com).
 
-## Abstract
-Current speech encoding pipelines often rely on separate processing pipelines between text and audio, not fully leveraging the inherent overlap between these modalities for understanding human communication. Language models excel at capturing semantic meaning from text that can complement the additional prosodic, emotional, and acoustic cues from speech. This work bridges the gap by proposing WhiSPA (Whisper with Semantic-Psychological Alignment), a novel audio encoder trained with a contrastive student-teacher learning objective. Using over 500k speech segments from mental health audio interviews, we evaluate the utility of aligning Whisper’s audio embeddings with text representations from an SBERT encoder and text-based assessments of psychological dimensions: emotion and personality. Over self-supervised and downstream mental health tasks, WhiSPA surpasses state-of-the-art speech models, achieving an average error reduction of 73.4% on the segment-level self-supervised objective and 83.8% on 11 psychological downstream tasks. WhiSPA demonstrates that cross-modal alignment can increase the amount of text-semantic and psychological information captured in audio-only encoder models.
+## Table of Contents
+1. Introduction
+2. Environment Setup
+3. Pretraining WhiSPA
+4. Inference
+5. Repository Structure
 
-## Getting started
+## Introduction
+WhiSPA (Whisper with Semantic-Psychological Alignment) is a novel speech encoder that leverages the Whisper model as a backbone and aligns its audio embeddings with text representations from SBERT and psychological embeddings. This alignment is achieved through a contrastive student-teacher learning objective, using hundreds of thousands of audio segments from mental health interviews. WhiSPA aims to capture both semantic and psychological information in audio-only encoder models, surpassing state-of-the-art speech models in various tasks.
+
+## Environment Setup
+To set up the environment for WhiSPA, you can use the provided `environment.yml` file to create a conda environment. Run the following command:
+```bash
+conda env create -f environment.yml
+conda activate speech
+```
+
+## Pretraining WhiSPA
+```bash
+python pretrain/whispa_train.py \
+--whisper_model_id openai/whisper-tiny \
+--with_bidirectionality \
+--loss CS \
+--num_epochs 50 \
+--batch_size 700 \
+--num_workers 16 \
+--lr 1e-5 \
+--wd 1e-2 \
+--save_name <MODEL_SAVE_NAME>
+```
+
+### Training Procedure
+![WhiSPA Training Architecture](visuals/WhiSPA_Training_Procedure.jpg)
+
+WhiSPA is trained using a student-teacher contrastive alignment approach. The Whisper model (student) is aligned with SBERT and psychological embeddings (teacher) to increase the cosine similarity between their embeddings. This alignment helps WhiSPA capture both semantic and psychological information in the audio embeddings.
+
+## Inference
+We have pushed our pretrained model to HuggingFace at the link [Jarhatz/whispa_394_v1](https://huggingface.co/Jarhatz/whispa_394_v1). You can run inference on a directory of audio files or a singular audio file using our audio encoder script.
+```bash
+python inference/encode_audio.py \
+--model_id Jarhatz/whispa_394_v1 \
+--hf_token <HF_TOKEN> \
+--audio_filepaths <AUDIO_FILE_PATH or AUDIO_DIR_PATH> \
+--device cuda
+```
+_*Note: .wav, .mp3, and .m4a are known to be supported with our pipeline._
