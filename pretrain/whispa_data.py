@@ -11,14 +11,15 @@ load_dotenv()
 
 class AudioDataset(torch.utils.data.Dataset):
     
-    def __init__(self, config, processor, mode='train'):
+    def __init__(self, config, processor, use_psych, mode='train'):
         self.config = config
-        self.hitop_segments_df = pd.read_csv(f'{os.getenv("HITOP_DATA_DIR")}whispa_dataset.csv')
-        self.wtc_segments_df = pd.read_csv(f'{os.getenv("WTC_DATA_DIR")}whispa_dataset.csv')
+        self.hitop_segments_df = pd.read_csv(f'{os.getenv("HITOP_DATA_DIR")}/whispa_dataset.csv')
+        self.wtc_segments_df = pd.read_csv(f'{os.getenv("WTC_DATA_DIR")}/whispa_dataset.csv')
         self.processor = processor
+        self.use_psych = use_psych
         self.mode = mode
 
-        if mode == 'train' and config.use_psych:
+        if mode == 'train' and self.use_psych:
             # Load SBERT Mean and Standard Dimensional Distribution
             sbert_emb_path = os.path.join(os.getenv('EMBEDDINGS_DIR'), config.sbert_model_id.replace('sentence-transformers/', ''))
             sbert_mean = np.load(os.path.join(sbert_emb_path, 'mean_emb.npy')).mean()
@@ -58,7 +59,7 @@ class AudioDataset(torch.utils.data.Dataset):
             return (
                 audio_inputs,
                 df.iloc[i]['message'],
-                torch.from_numpy(df.iloc[i][4:].to_numpy(dtype=np.float32)).unsqueeze(0) if self.config.use_psych else None
+                torch.from_numpy(df.iloc[i][4:].to_numpy(dtype=np.float32)).unsqueeze(0) if self.use_psych else None
             )
         elif self.mode == 'inference':
             return (
@@ -97,7 +98,7 @@ def collate_train(batch):
     return {
         'audio_inputs': audio_inputs,
         'message': [m for _, m, _  in batch],
-        'outcomes': torch.cat([o for _, _, o in batch], dim=0) if isinstance(batch[0][2], torch.Tensor) else None
+        'psych_emb': torch.cat([o for _, _, o in batch], dim=0) if isinstance(batch[0][2], torch.Tensor) else None
     }
 
 

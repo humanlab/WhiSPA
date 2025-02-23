@@ -37,11 +37,8 @@ class WhiSPAModel(
             cache_dir=os.getenv('CACHE_DIR')
         )
 
-        if config.with_bidirectionality:
-            self.sbert_encoder = self.sbert_model.encoder.to(config.device)
-
         if config.n_new_dims:
-            # Learnable Projection Matrix (D x 10)
+            # Learnable Projection Matrix (emb_dims x new_dims)
             self.projection = torch.nn.Linear(config.emb_dims, config.n_new_dims).to(config.device)
 
         self.linear = self.sbert_model.pooler.dense.to(config.device)
@@ -54,16 +51,6 @@ class WhiSPAModel(
             decoder_input_ids=text_input_ids,
             decoder_attention_mask=text_attention_mask
         ).last_hidden_state
-        
-        if self.config.with_bidirectionality:
-            embs = self.sbert_encoder(
-                embs,
-                attention_mask=self.sbert_model.get_extended_attention_mask(
-                    text_attention_mask,
-                    embs.size()[:-1]
-                ),
-                head_mask=[None] * self.sbert_model.config.num_hidden_layers
-            )[0]
         
         embs = self.pooler(embs, text_attention_mask)
         embs = self.linear(embs)

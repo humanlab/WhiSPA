@@ -6,11 +6,10 @@ import torch
 class WhiSPAConfig():
     def __init__(
         self,
-        whisper_model_id: str = 'openai/whisper-tiny',
+        whisper_model_id: str = 'openai/whisper-small',
         pooling_mode: str = 'mean',
-        with_bidirectionality: bool = False,
         n_new_dims: int = 0,
-        use_psych: bool = False,
+        # use_psych: bool = False,
         loss: str = 'NCE',
         tau: float = 0.1,
         batch_size: int = 1,
@@ -39,15 +38,14 @@ class WhiSPAConfig():
             self.sbert_model_id = sbert_model_id_choices[whisper_model_id_choices.index(whisper_model_id)]
             self.whisper_model_id = whisper_model_id
         except ValueError:
-            self.emb_dims = emb_dims_choices[0]
-            self.sbert_model_id = sbert_model_id_choices[0]
-            self.whisper_model_id = whisper_model_id_choices[0]
+            self.emb_dims = emb_dims_choices[1]
+            self.sbert_model_id = sbert_model_id_choices[1]
+            self.whisper_model_id = whisper_model_id_choices[1]
                 
         # Model hyperparameters
         self.pooling_mode = pooling_mode
-        self.with_bidirectionality = with_bidirectionality
         self.n_new_dims = n_new_dims
-        self.use_psych = use_psych
+        # self.use_psych = use_psych
         self.loss = loss
         self.tau = tau
 
