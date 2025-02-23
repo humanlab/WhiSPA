@@ -11,19 +11,19 @@ BASE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)))
 
 def main():
     parser = argparse.ArgumentParser(description='Script to Convert CSV to SQL file')
-
+    parser.add_argument("-d", "--database", required=True, type=str, help="Specify the name of the database")
     parser.add_argument("-c", "--credential", required=True, type=str, help="Specify path to credential file")
     parser.add_argument("-t", "--table_name", required=True, type=str, help="Specify the name of the SQL Table")
     parser.add_argument("--csv", required=True, type=str, help="Specify the .csv file")
     args = parser.parse_args()
 
     # Create a connection to the MySQL server
-    connection, cursor = get_sql_credentials(args.credential)
+    connection, cursor = get_sql_credentials(args.credential, args.database)
     driver(connection, cursor, args.table_name, args.csv)
     
 
 # Verifies user's credentials and returns a MySQL Connection object
-def get_sql_credentials(filename):
+def get_sql_credentials(filename, database):
     usr = ''
     pwd = ''
     with open(filename, 'r') as file:
@@ -37,7 +37,7 @@ def get_sql_credentials(filename):
         host='localhost',
         user=usr,
         password=pwd,
-        database='HiTOP',
+        database=database,
     )
     return connection, connection.cursor()
 

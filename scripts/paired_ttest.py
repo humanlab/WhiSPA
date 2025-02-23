@@ -19,7 +19,7 @@ def paired_ttest(gt_df, baseline_df, pred_df):
     # Filter the DataFrames to include only common user_ids
     gt_df = gt_df[gt_df['user_id'].isin(common_user_ids)].reset_index(drop=True)
     baseline_df = baseline_df[baseline_df['user_id'].isin(common_user_ids)].reset_index(drop=True)
-    pred_df = pred_df[pred_df['user_id'].isin(common_user_ids)].reset_index(drop=True)
+    pred_df = pred_df[pred_df['user_id'].isin(common_user_ids)].reset_index(drop=True) 
 
     # Find shared columns across all DataFrames
     shared_columns = [col for col in pred_df.columns if col != 'user_id']

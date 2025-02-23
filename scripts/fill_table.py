@@ -91,7 +91,7 @@ def driver(connection, cursor, table_name, csv_path, no_agg):
                 values = (row['message_id'], feat_name, value, value)
                 cursor.execute(insert_query, values)
     else:
-        df = pd.read_csv(segments_path)[['user_id', 'message_id']].merge(pd.read_csv(csv_path), on='message_id', how='left')
+        df = pd.read_csv(f'{segments_path}whispa_dataset.csv')[['user_id', 'message_id']].merge(pd.read_csv(csv_path), on='message_id', how='left')
         user_ids = np.unique(df['user_id'])
         for idx, user_id in enumerate(user_ids):
             print(f'[{idx + 1}/{len(user_ids)}]\tuser_id: {user_id}')

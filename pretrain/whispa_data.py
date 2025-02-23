@@ -48,7 +48,8 @@ class AudioDataset(torch.utils.data.Dataset):
         if self.processor is not None:
             waveform = preprocess_audio(os.path.join(audio_dir, df.iloc[i]['filename']))
             audio_inputs = self.processor(waveform.squeeze(), sampling_rate=16000, return_tensors="pt")
-            if isinstance(self.processor, transformers.models.whisper.processing_whisper.WhisperProcessor):
+            if isinstance(self.processor, transformers.models.whisper.processing_whisper.WhisperProcessor) \
+            or isinstance(self.processor, transformers.models.wav2vec2_bert.processing_wav2vec2_bert.Wav2Vec2BertProcessor):
                 audio_inputs = audio_inputs['input_features']
             elif isinstance(self.processor, transformers.models.wav2vec2.processing_wav2vec2.Wav2Vec2Processor):
                 audio_inputs = audio_inputs['input_values']

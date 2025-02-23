@@ -11,10 +11,12 @@ import torch.nn.functional as F
 import transformers
 from transformers import (
     AutoTokenizer,
+    AutoProcessor,
     AutoModel,
     WhisperProcessor,
-    Wav2Vec2Processor,
-    Wav2Vec2Model
+    Wav2Vec2Model,
+    Wav2Vec2BertModel,
+    HubertModel
 )
 import pandas as pd
 from tqdm import tqdm
@@ -77,10 +79,26 @@ def load_models(config, load_name):
             cache_dir=os.getenv('CACHE_DIR'),
             TOKENIZERS_PARALLELISM=False
         )
-    elif 'wav2vec' in load_name:
-        # Load the Wav2Vec model and processor
+    elif 'wav2vec2-bert' in load_name:
+        # Load the Wav2Vec2-BERT model and processor
+        model = Wav2Vec2BertModel.from_pretrained(load_name, cache_dir=os.getenv('CACHE_DIR')).to(config.device)
+        processor = AutoProcessor.from_pretrained(
+            load_name,
+            cache_dir=os.getenv('CACHE_DIR'),
+            device_map=config.device
+        )
+    elif 'wav2vec2' in load_name:
+        # Load the Wav2Vec2 model and processor
         model = Wav2Vec2Model.from_pretrained(load_name, cache_dir=os.getenv('CACHE_DIR')).to(config.device)
-        processor = Wav2Vec2Processor.from_pretrained(
+        processor = AutoProcessor.from_pretrained(
+            load_name,
+            cache_dir=os.getenv('CACHE_DIR'),
+            device_map=config.device
+        )
+    elif 'hubert' in load_name:
+        # Load the HuBERT model and processor
+        model = HubertModel.from_pretrained(load_name, cache_dir=os.getenv('CACHE_DIR')).to(config.device)
+        processor = AutoProcessor.from_pretrained(
             load_name,
             cache_dir=os.getenv('CACHE_DIR'),
             device_map=config.device
@@ -105,7 +123,7 @@ def load_models(config, load_name):
             print("CUDA is not available. Only CPU will be used.\n")
         model = torch.nn.DataParallel(model, device_ids=gpus)
 
-    if not ('sentence-transformers/' in load_name or 'wav2vec' in load_name):
+    if not ('sentence-transformers/' in load_name or 'facebook/' in load_name or 'hf-audio/' in load_name):
         print('Instantiating WhiSPA with loaded state dict...')
         state_dict = torch.load(os.path.join(os.getenv('CHECKPOINT_DIR'), load_name, 'best.pth'))
         try:
@@ -141,6 +159,9 @@ def inference(
     elif isinstance(processor, transformers.models.wav2vec2.processing_wav2vec2.Wav2Vec2Processor):
         load_name = load_name.replace('facebook/', '')
         config.emb_dims = model.module.config.hidden_size
+    elif isinstance(processor, transformers.models.wav2vec2_bert.processing_wav2vec2_bert.Wav2Vec2BertProcessor):
+        load_name = load_name.replace('hf-audio/', '')
+        config.emb_dims = model.module.config.hidden_size
     
     # Handle output file and paths
     output_path = os.path.join(os.getenv('EMBEDDINGS_DIR'), load_name)
@@ -160,7 +181,6 @@ def inference(
     start_time = time.time()
     with torch.no_grad():
         for batch in tqdm(data_loader):
-
             if tokenizer is not None:
                 # SBERT-based tokenization
                 sbert_inputs = tokenizer(
@@ -176,9 +196,18 @@ def inference(
                 embs = F.normalize(sbert_embs, p=2, dim=1)
             
             elif isinstance(processor, transformers.models.wav2vec2.processing_wav2vec2.Wav2Vec2Processor):
-                # Get Wav2Vec's MEAN embedding
+                # Get W2V2/HuBERT's MEAN embedding
                 try:
                     wav_embs = model(input_values=batch['audio_inputs'].to(config.device))
+                    wav_embs = wav_embs.last_hidden_state.mean(1)
+                    embs = F.normalize(wav_embs, p=2, dim=1)
+                except Exception as e:
+                    print(Warning(e))
+            
+            elif isinstance(processor, transformers.models.wav2vec2_bert.processing_wav2vec2_bert.Wav2Vec2BertProcessor):
+                try:
+                    # Get W2V2-BERT's MEAN embedding
+                    wav_embs = model(input_features=batch['audio_inputs'].to(config.device))
                     wav_embs = wav_embs.last_hidden_state.mean(1)
                     embs = F.normalize(wav_embs, p=2, dim=1)
                 except Exception as e:
@@ -218,7 +247,7 @@ def main():
     args = load_args()
 
     print('Preparing Model Configuration...')
-    if 'sentence-transformers/' in args.load_name or 'wav2vec' in args.load_name:
+    if 'sentence-transformers/' in args.load_name or 'facebook/' in args.load_name or 'hf-audio/' in args.load_name:
         print(f'\tInitializing Pretrained Model: `{args.load_name}`...')
         config = WhiSPAConfig(
             batch_size=args.batch_size,
