@@ -13,6 +13,7 @@ from transformers import (
     AutoTokenizer,
     AutoProcessor,
     AutoModel,
+    WhisperModel,
     WhisperProcessor,
     Wav2Vec2Model,
     Wav2Vec2BertModel,
@@ -36,7 +37,7 @@ def load_args():
         '--load_name',
         required=True,
         type=str,
-        help='Specify the filename to the model directory. It will use `config.pth` and `best.pth` saved in: <CHECKPOINT_DIR>/<MODEL_NAME>/`\nOr specify the HuggingFace model id for a SBERT autoencoder from the sentence-transformers/ library. `Ex. sentence-transformers/all-MiniLM-L12-v2`'
+        help='Specify the filename to the model directory. It will use `config.pth` and `best.pth` saved in: <CHECKPOINT_DIR>/<MODEL_NAME>/`\nOr specify the HuggingFace model id to use. `Ex. sentence-transformers/all-mpnet-base-v2`'
     )
     parser.add_argument(
         "--batch_size",
@@ -223,7 +224,7 @@ def inference(
                     return_tensors='pt'
                 ).to(config.device)
 
-                # Get WhiSPA's MEAN/LAST token
+                # Get WhiSPA's embedding
                 whis_embs = model(
                     batch['audio_inputs'].to(config.device),
                     outputs['input_ids'],
@@ -271,7 +272,7 @@ def main():
     processor, tokenizer, model = load_models(config, args.load_name)
 
     print('\nPreprocessing AudioDataset...')
-    dataset = AudioDataset(config, processor, mode='inference')
+    dataset = AudioDataset(config, [processor], mode='inference')
     print(f'\tTotal dataset size (N): {len(dataset)}')
 
     print('\nStarting Inference...')

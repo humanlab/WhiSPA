@@ -14,7 +14,7 @@ def last_pooling(embeddings, attention_mask):
 
 
 # Cosine Similarity Loss
-def cos_sim_loss(whis_embs, sbert_embs):
+def cs_loss(whis_embs, sbert_embs):
     # z_audio = F.normalize(whis_embs, p=2, dim=1)
     # z_text = F.normalize(sbert_embs, p=2, dim=1)
     # return 1 - (z_audio * z_text).sum(dim=-1).mean()
@@ -34,8 +34,8 @@ def sim_clr_loss(whis_embs, sbert_embs):
     return positive_loss + negative_loss
 
 
-# Normalized Temperature-Scaled Cross Entropy Loss
-def nce_cont_loss(whis_embs, sbert_embs, tau=0.1, pooling_mode='sum'):
+# Noise Contrastive Estimation Loss
+def nce_loss(z_a, z_b, tau=0.1, pooling_mode='sum'):
     """
         Helpful link I used for reference:
         https://jamesmccaffrey.wordpress.com/2022/04/11/an-example-of-normalized-temperature-scaled-cross-entropy-loss/
@@ -43,11 +43,11 @@ def nce_cont_loss(whis_embs, sbert_embs, tau=0.1, pooling_mode='sum'):
         Implemented from the paper:
         "A Simple Framework for Contrastive Learning of Visual Representations" (2020), Chen, et al.
     """
-    combined = torch.cat([whis_embs, sbert_embs], dim=0)  # shape (2 * batch_size, emb_dims)
+    combined = torch.cat([z_a, z_b], dim=0)  # shape (2 * batch_size, emb_dims)
     combined = F.normalize(combined, dim=1)
 
     # Define positive pairs (each original data with its corresponding augmented data)
-    batch_size = whis_embs.shape[0]
+    batch_size = z_a.shape[0]
     pos_pairs = torch.arange(batch_size)
     
     # Compute cosine similarity for all pairs in the batch
@@ -61,43 +61,18 @@ def nce_cont_loss(whis_embs, sbert_embs, tau=0.1, pooling_mode='sum'):
     return losses.sum() if pooling_mode == 'sum' else losses.mean()
 
 
-def mow_loss(whis_embs, sbert_embs, psych_embs, psych_gts):
+def dwd_loss(whispa_embs, sbert_embs, hubert_embs, psych_embs, alpha=0.5, beta=0.5):
+    """
+        Dual-Weighed Distillation Loss
+        ------------------------------
+        L_d = α * L + β * L + p * L
+        ------------------------------
+    """
+    if psych_embs:
+        return alpha * nce_loss(whispa_embs[:-10], sbert_embs) + beta * nce_loss(whispa_embs[:-10], hubert_embs) + nce_loss(whispa_embs[-10:], psych_embs)
+    else:
+        return alpha * nce_loss(whispa_embs, sbert_embs) + beta * nce_loss(whispa_embs, hubert_embs)
+
+
+def mow_loss():
     pass
-# # Supervised Contrastive Loss
-# def scl_loss(whis_embs, sbert_embs, labels, tau=0.10):
-#     # This is a supervised contrastive loss objective which requires
-#     # the labels to also be passed in for calculating loss
-#     batch_size = len(whis_embs)
-
-#     all_sims = torch.zeros((batch_size, batch_size), dtype=torch.float32)
-#     for i in range(batch_size):
-#         for j in range(batch_size):
-#             all_sims[i,j] = torch.exp(torch.cosine_similarity(whis_embs[i,:], sbert_embs[j,:], dim=-1) / tau)
-    
-#     sum = 0.0
-#     for i in range(batch_size):
-#         # Get positive samples and negative samples
-#         positives = []
-#         negatives = []
-#         for l in range(batch_size):
-#             if not l == i:
-#                 if labels[l] == labels[i]:
-#                     positives.append(l)
-#                 else:
-#                     negatives.append(l)
-
-#         inner_sum = 0.0
-#         inv_cardinality = -1.0
-#         # Use Supervised Contrastive Learning
-#         if len(positives):
-#             inv_cardinality /= len(positives)
-#             for p in positives:
-#                 negative_sum = 0.0
-#                 for n in negatives:
-#                     negative_sum += all_sims[i,n]
-#                 inner_sum += torch.log(all_sims[i,p] / negative_sum)
-#         # Use Self-Supervised Contrastive Learning
-#         else:
-#             inner_sum += torch.log(all_sims[i,i] / torch.sum(torch.cat([all_sims[i,:i], all_sims[i,i+1:]])))
-#         sum += inv_cardinality * inner_sum
-#     return sum

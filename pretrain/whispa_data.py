@@ -11,11 +11,11 @@ load_dotenv()
 
 class AudioDataset(torch.utils.data.Dataset):
     
-    def __init__(self, config, processor, use_psych, mode='train'):
+    def __init__(self, config, processors, use_psych=False, mode='train'):
         self.config = config
         self.hitop_segments_df = pd.read_csv(f'{os.getenv("HITOP_DATA_DIR")}/whispa_dataset.csv')
         self.wtc_segments_df = pd.read_csv(f'{os.getenv("WTC_DATA_DIR")}/whispa_dataset.csv')
-        self.processor = processor
+        self.processors = processors
         self.use_psych = use_psych
         self.mode = mode
 
@@ -45,27 +45,36 @@ class AudioDataset(torch.utils.data.Dataset):
             df = self.wtc_segments_df
             dataset_name = 'wtc'
         
-        audio_inputs = None
-        if self.processor is not None:
-            waveform = preprocess_audio(os.path.join(audio_dir, df.iloc[i]['filename']))
-            audio_inputs = self.processor(waveform.squeeze(), sampling_rate=16000, return_tensors="pt")
-            if isinstance(self.processor, transformers.models.whisper.processing_whisper.WhisperProcessor) \
-            or isinstance(self.processor, transformers.models.wav2vec2_bert.processing_wav2vec2_bert.Wav2Vec2BertProcessor):
-                audio_inputs = audio_inputs['input_features']
-            elif isinstance(self.processor, transformers.models.wav2vec2.processing_wav2vec2.Wav2Vec2Processor):
-                audio_inputs = audio_inputs['input_values']
+        audio_inputs = []
+        for processor in self.processors:
+            if processor is None:
+                audio_input = None
+            else:
+                waveform = preprocess_audio(os.path.join(audio_dir, df.iloc[i]['filename']))
+                audio_input = processor(waveform.squeeze(), sampling_rate=16000, return_tensors="pt")
+                try:
+                    audio_input = audio_input['input_features']
+                except:
+                    audio_input = audio_input['input_values']
+            audio_inputs.append(audio_input)
+            # if isinstance(self.processor, transformers.models.whisper.processing_whisper.WhisperProcessor) \
+            # or isinstance(self.processor, transformers.models.wav2vec2_bert.processing_wav2vec2_bert.Wav2Vec2BertProcessor):
+            #     audio_inputs = audio_inputs['input_features']
+            # elif isinstance(self.processor, transformers.models.wav2vec2.processing_wav2vec2.Wav2Vec2Processor):
+            #     audio_inputs = audio_inputs['input_values']
         
         if self.mode == 'train':
             return (
-                audio_inputs,
+                audio_inputs[0],
                 df.iloc[i]['message'],
+                audio_inputs[1],
                 torch.from_numpy(df.iloc[i][4:].to_numpy(dtype=np.float32)).unsqueeze(0) if self.use_psych else None
             )
         elif self.mode == 'inference':
             return (
                 dataset_name,
                 df.iloc[i]['message_id'],
-                audio_inputs,
+                audio_inputs[0],
                 df.iloc[i]['message']
             )
         else:
@@ -87,18 +96,31 @@ def preprocess_audio(audio_path):
 
 
 def collate_train(batch):
+    # Truncate HuBERT's preprocessed tensors to max length
+    MAX_LENGTH = 400000
+    hubert_inputs = [h[:, :MAX_LENGTH] for _, _, h, _ in batch]
+
+    # Batch padding
     try:
-        audio_inputs = torch.cat([a for a, _, _ in batch], dim=0) if isinstance(batch[0][0], torch.Tensor) else None
+        whisper_inputs = torch.cat([w for w, _, _, _ in batch], dim=0) if isinstance(batch[0][0], torch.Tensor) else None
+        hubert_inputs = torch.cat(hubert_inputs, dim=0) if isinstance(batch[0][2], torch.Tensor) else None
     except Exception:
-        audio_inputs = pad_sequence(
-            [a.squeeze(0) for a, _, _ in batch],
+        whisper_inputs = pad_sequence(
+            [w.squeeze(0) for w, _, _, _ in batch],
             batch_first=True,
             padding_value=0.0
         )
+        hubert_inputs = pad_sequence(
+            [h.squeeze(0) for h in hubert_inputs],
+            batch_first=True,
+            padding_value=0.0
+        )
+    
     return {
-        'audio_inputs': audio_inputs,
-        'message': [m for _, m, _  in batch],
-        'psych_emb': torch.cat([o for _, _, o in batch], dim=0) if isinstance(batch[0][2], torch.Tensor) else None
+        'whisper_inputs': whisper_inputs,
+        'message': [m for _, m, _, _  in batch],
+        'hubert_inputs': hubert_inputs,
+        'psych_emb': torch.cat([o for _, _, _, o in batch], dim=0) if isinstance(batch[0][-1], torch.Tensor) else None
     }
 
 

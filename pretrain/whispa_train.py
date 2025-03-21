@@ -11,8 +11,8 @@ import torch
 import torch.nn.functional as F
 from transformers import (
     AutoTokenizer,
+    AutoProcessor,
     AutoModel,
-    WhisperProcessor
 )
 from tqdm import tqdm
 from matplotlib import pyplot as plt
@@ -23,9 +23,7 @@ from pretrain.whispa_model import WhiSPAModel
 from pretrain.whispa_data import AudioDataset, collate_train
 from pretrain.whispa_utils import (
     mean_pooling,
-    cos_sim_loss,
-    nce_cont_loss,
-    mow_loss,
+    dwd_loss,
 )
 
 
@@ -94,10 +92,11 @@ def load_args():
     # Hyperparams
     parser.add_argument(
         '--whisper_model_id',
-        default='openai/whisper-small',
+        default='openai/whisper-medium',
         choices=[
             'openai/whisper-tiny',
-            'openai/whisper-small'
+            'openai/whisper-small',
+            'openai/whisper-medium'
         ],
         type=str,
         help='Specify the model_id of the Whisper variant on HuggingFace repository'
@@ -129,14 +128,31 @@ def load_args():
     )
     parser.add_argument(
         '--loss',
-        default='NCE',
+        default='DWD',
         choices=[
-            'CS',
-            'NCE',
+            'DWD',
             'MOW',
         ],
         type=str,
         help='Specify the type of loss criteria during training'
+    )
+    parser.add_argument(
+        "--alpha",
+        default=0.5,
+        type=float,
+        help="The alpha value for the multiweighted objective dual loss function. `Default value set to 0.5`"
+    )
+    parser.add_argument(
+        "--beta",
+        default=0.5,
+        type=float,
+        help="The beta value for the multiweighted objective dual loss function. `Default value set to 0.5`"
+    )
+    parser.add_argument(
+        "--rho",
+        default=0.0,
+        type=float,
+        help="The rho value for the multiweighted objective dual loss function. `Default value set to 0.0`"
     )
     parser.add_argument(
         "--tau",
@@ -153,28 +169,33 @@ def load_args():
 
 
 def load_models(config, load_name):
-    # Load the Whisper audio processor
-    processor = WhisperProcessor.from_pretrained(
+    # Load the WhiSPA and Whisper processor
+    whisper_processor = AutoProcessor.from_pretrained(
         config.whisper_model_id,
         cache_dir=os.getenv('CACHE_DIR'),
         device_map=config.device
     )
-
-    # Load WhiSPA and Whisper Encoder
     whispa = WhiSPAModel(config).to(config.device)
-    whisper = AutoModel.from_pretrained(
-        'openai/whisper-tiny',
-        cache_dir=os.getenv('CACHE_DIR')
-    ).encoder.to(config.device)
 
-    # Load the pre-trained SentenceTransformer model/tokenizer
-    tokenizer = AutoTokenizer.from_pretrained(
-        'sentence-transformers/all-MiniLM-L12-v2',
+    # Load the pre-trained SBERT model/tokenizer
+    sbert_tokenizer = AutoTokenizer.from_pretrained(
+        config.linguistic_teacher_id,
         cache_dir=os.getenv('CACHE_DIR'),
         TOKENIZERS_PARALLELISM=False
     )
     sbert = AutoModel.from_pretrained(
-        'sentence-transformers/all-MiniLM-L12-v2',
+        config.linguistic_teacher_id,
+        cache_dir=os.getenv('CACHE_DIR')
+    ).to(config.device)
+
+    # Load the pre-trained HuBERT model/processor
+    hubert_processor = AutoProcessor.from_pretrained(
+        config.acoustic_teacher_id,
+        cache_dir=os.getenv('CACHE_DIR'),
+        device_map=config.device
+    )
+    hubert = AutoModel.from_pretrained(
+        config.acoustic_teacher_id,
         cache_dir=os.getenv('CACHE_DIR')
     ).to(config.device)
 
@@ -186,8 +207,8 @@ def load_models(config, load_name):
                 print(f"\tGPU {i}: {torch.cuda.get_device_name(i)}")
             print()
             whispa = torch.nn.DataParallel(whispa, device_ids=gpus)
-            whisper = torch.nn.DataParallel(whisper, device_ids=gpus)
             sbert = torch.nn.DataParallel(sbert, device_ids=gpus)
+            hubert = torch.nn.DataParallel(hubert, device_ids=gpus)
         else:
             print("CUDA is not available. Only CPU will be used.\n")
 
@@ -200,7 +221,7 @@ def load_models(config, load_name):
             state_dict = {k.replace('module.', ''): v for k, v in state_dict.items()}
             whispa.load_state_dict(state_dict)
 
-    return whispa, whisper, sbert, processor, tokenizer
+    return whispa, sbert, hubert, whisper_processor, sbert_tokenizer, hubert_processor
 
 
 def plot_loss(train_loss, val_loss, save_name):
@@ -220,10 +241,10 @@ def train(
     train_dataset,
     val_dataset,
     whispa,
-    whisper,
     sbert,
-    processor,
-    tokenizer,
+    hubert,
+    whisper_tokenizer,
+    sbert_tokenizer,
     config,
     use_psych,
     save_name
@@ -257,16 +278,11 @@ def train(
         verbose=True
     )
 
-    if config.loss == 'CS':
-        loss_func = cos_sim_loss
+    if config.loss == 'DWD':
+        loss_func = dwd_loss
+    elif config.loss == 'MOW':
+        loss_func = None  # Not yet implemented
 
-    elif config.loss == 'NCE':
-        loss_func = nce_cont_loss
-
-    elif config.loss == 'MWO':
-        loss_func = None # Not implemented yet
-
-    whisper.eval()
     sbert.eval()
     train_loss = []
     val_loss = []
@@ -281,7 +297,7 @@ def train(
         for batch in tqdm(train_loader, desc=f"Epoch {epoch + 1}/{config.num_epochs} - Training"):
 
             # SBERT-based tokenization
-            sbert_inputs = tokenizer(
+            sbert_inputs = sbert_tokenizer(
                 batch['message'],
                 padding=True,
                 truncation=True,
@@ -289,7 +305,7 @@ def train(
             ).to(config.device)
 
             # Whisper-based tokenization
-            inputs = processor.tokenizer(
+            inputs = whisper_tokenizer(
                 batch['message'],
                 padding=True,
                 truncation=True,
@@ -304,31 +320,29 @@ def train(
                     # Get SBERT's MEAN embedding
                     sbert_embs = sbert(**sbert_inputs).last_hidden_state
                     sbert_embs = mean_pooling(sbert_embs, sbert_inputs['attention_mask'])
-                    # Get Whisper's MEAN embedding
-                    whisper_embs = whisper(batch['audio_inputs'].to(config.device)).last_hidden_state
-                    whisper_embs = torch.mean(whisper_embs, dim=1)
-                    # Concatenate both embeddings
-                    target_embs = torch.cat([whisper_embs, sbert_embs], dim=1)
-                
+
+                    # Get HuBERT's MEAN embedding
+                    hubert_embs = hubert(batch['hubert_inputs'].to(config.device)).last_hidden_state.mean(1)
+
                 # Augment with psychological features
-                if use_psych:
-                    psych_emb = batch['psych_emb'].to(config.device)
-                    if config.n_new_dims:
-                        # Concatenation
-                        target_embs = torch.cat([target_embs, psych_emb], dim=1)
-                    else:
-                        # Replacement
-                        target_embs[:, :10] = psych_emb
+                psych_embs = batch['psych_emb'].to(config.device) if use_psych else None
 
                 # Get WhiSPA's embedding
                 whispa_embs = whispa(
-                    batch['audio_inputs'].to(config.device),
+                    batch['whisper_inputs'].to(config.device),
                     inputs['input_ids'],
                     inputs['attention_mask']
                 )
 
                 # Apply loss functions on embeddings
-                loss = loss_func(whispa_embs, target_embs)
+                loss = loss_func(
+                    whispa_embs,
+                    sbert_embs,
+                    hubert_embs,
+                    psych_embs,
+                    config.alpha,
+                    config.beta,
+                )
                 epoch_train_loss += loss.item()
 
             # Scale the losses and perform backward pass
@@ -349,7 +363,7 @@ def train(
             for batch in tqdm(val_loader, desc=f"Epoch {epoch + 1}/{config.num_epochs} - Validation"):
                 
                 # SBERT-based tokenization
-                sbert_inputs = tokenizer(
+                sbert_inputs = sbert_tokenizer(
                     batch['message'],
                     padding=True,
                     truncation=True,
@@ -357,7 +371,7 @@ def train(
                 ).to(config.device)
 
                 # Whisper-based tokenization
-                inputs = processor.tokenizer(
+                inputs = whisper_tokenizer(
                     batch['message'],
                     padding=True,
                     truncation=True,
@@ -371,31 +385,29 @@ def train(
                     # Get SBERT's MEAN embedding
                     sbert_embs = sbert(**sbert_inputs).last_hidden_state
                     sbert_embs = mean_pooling(sbert_embs, sbert_inputs['attention_mask'])
-                    # Get Whisper's MEAN embedding
-                    whisper_embs = whisper(batch['audio_inputs'].to(config.device)).last_hidden_state
-                    whisper_embs = torch.mean(whisper_embs, dim=1)
-                    # Concatenate both embeddings
-                    target_embs = torch.cat([whisper_embs, sbert_embs], dim=1)
-                
+
+                    # Get HuBERT's MEAN embedding
+                    hubert_embs = hubert(batch['hubert_inputs'].to(config.device)).last_hidden_state.mean(1)
+
                     # Augment with psychological features
-                    if use_psych:
-                        psych_emb = batch['psych_emb'].to(config.device)
-                        if config.n_new_dims:
-                            # Concatenation
-                            target_embs = torch.cat([target_embs, psych_emb], dim=1)
-                        else:
-                            # Replacement
-                            target_embs[:, :10] = psych_emb
+                    psych_embs = batch['psych_emb'].to(config.device) if use_psych else None
 
                     # Get WhiSPA's embedding
                     whispa_embs = whispa(
-                        batch['audio_inputs'].to(config.device),
+                        batch['whisper_inputs'].to(config.device),
                         inputs['input_ids'],
                         inputs['attention_mask']
                     )
 
                     # Apply loss functions on embeddings
-                    loss = loss_func(whispa_embs, target_embs)
+                    loss = loss_func(
+                        whispa_embs,
+                        sbert_embs,
+                        hubert_embs,
+                        psych_embs,
+                        config.alpha,
+                        config.beta,
+                    )
                     epoch_val_loss += loss.item()
 
         # Adjust the learning rate based on validation loss
@@ -444,6 +456,12 @@ def main():
         config.shuffle = not args.no_shuffle
         if config.loss != args.loss:
             config.loss = args.loss
+        if config.alpha != args.alpha:
+            config.alpha = args.alpha
+        if config.beta != args.beta:
+            config.beta = args.beta
+        if config.rho != args.rho:
+            config.rho = args.rho
         if config.tau != args.tau:
             config.tau = args.tau
         if config.batch_size != args.batch_size:
@@ -466,6 +484,9 @@ def main():
             pooling_mode = args.pooling_mode,
             n_new_dims= args.n_new_dims,
             loss = args.loss,
+            alpha = args.alpha,
+            beta = args.beta,
+            rho = args.rho,
             tau = args.tau,
             batch_size = args.batch_size,
             num_workers = args.num_workers,
@@ -486,10 +507,10 @@ def main():
         torch.save(config, config_path)
 
     print('\nLoading and Initializing Models with Config...')
-    whispa, whisper, sbert, processor, tokenizer = load_models(config, args.load_name)
+    whispa, sbert, hubert, whisper_processor, sbert_tokenizer, hubert_processor = load_models(config, args.load_name)
 
     print('\nPreprocessing AudioDataset...')
-    dataset = AudioDataset(config, processor, args.use_psych, mode='train')
+    dataset = AudioDataset(config, [whisper_processor, hubert_processor], args.use_psych, mode='train')
 
     # Calculate lengths for the train/val split (80:20)
     total_size = len(dataset)
@@ -510,10 +531,10 @@ def main():
         train_dataset,
         val_dataset,
         whispa,
-        whisper,
         sbert,
-        processor,
-        tokenizer,
+        hubert,
+        whisper_processor.tokenizer,
+        sbert_tokenizer,
         config,
         args.use_psych,
         args.save_name

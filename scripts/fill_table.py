@@ -10,7 +10,7 @@ load_dotenv()
 
 def main():
     parser = argparse.ArgumentParser(description='DLATK Feature Table Filler')
-
+    parser.add_argument("-d", "--database", required=True, type=str, help="Specify name of database")
     parser.add_argument("-c", "--credential", required=True, type=str, help="Specify path to credential file")
     parser.add_argument("-t", "--table_name", required=True, type=str, help="Specify the name of the feature table to create")
     parser.add_argument("--csv", required=True, type=str, help="Specify the path to the features file (must be .csv format)")
@@ -18,12 +18,12 @@ def main():
     args = parser.parse_args()
 
     # Create a connection to the MySQL server
-    connection, cursor = get_sql_credentials(args.credential)
+    connection, cursor = get_sql_credentials(args.credential, args.database)
     driver(connection, cursor, args.table_name, args.csv, args.no_agg)
     
 
 # Verifies user's credentials and returns a MySQL Connection object
-def get_sql_credentials(filename):
+def get_sql_credentials(filename, database):
     usr = ''
     pwd = ''
     with open(filename, 'r') as file:
@@ -37,7 +37,7 @@ def get_sql_credentials(filename):
         host='localhost',
         user=usr,
         password=pwd,
-        database='HiTOP'
+        database=database
     )
     return connection, connection.cursor()
 
@@ -91,7 +91,7 @@ def driver(connection, cursor, table_name, csv_path, no_agg):
                 values = (row['message_id'], feat_name, value, value)
                 cursor.execute(insert_query, values)
     else:
-        df = pd.read_csv(f'{segments_path}whispa_dataset.csv')[['user_id', 'message_id']].merge(pd.read_csv(csv_path), on='message_id', how='left')
+        df = pd.read_csv(f'{segments_path}/whispa_dataset.csv')[['user_id', 'message_id']].merge(pd.read_csv(csv_path), on='message_id', how='left')
         user_ids = np.unique(df['user_id'])
         for idx, user_id in enumerate(user_ids):
             print(f'[{idx + 1}/{len(user_ids)}]\tuser_id: {user_id}')

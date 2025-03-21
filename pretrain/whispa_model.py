@@ -33,7 +33,7 @@ class WhiSPAModel(
         ).to(config.device)
 
         self.sbert_model = AutoModel.from_pretrained(
-            config.sbert_model_id,
+            config.linguistic_teacher_id,
             cache_dir=os.getenv('CACHE_DIR')
         )
 
