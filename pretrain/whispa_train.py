@@ -94,7 +94,7 @@ def load_args():
     # Hyperparams
     parser.add_argument(
         '--whisper_model_id',
-        default='openai/whisper-tiny',
+        default='openai/whisper-medium',
         choices=[
             'openai/whisper-tiny',
             'openai/whisper-small',

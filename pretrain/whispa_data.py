@@ -22,7 +22,7 @@ class AudioDataset(torch.utils.data.Dataset):
             # Load SBERT Mean and Standard Dimensional Distribution
             sbert_emb_path = os.path.join(os.getenv('EMBEDDINGS_DIR'), config.sbert_model_id.replace('sentence-transformers/', ''))
             sbert_mean = np.load(os.path.join(sbert_emb_path, 'mean_emb.npy')).mean()
-            sbert_std = np.load(os.path.join(sbert_emb_path, 'std_emb.npy')).mean() # THIS IS NOT A TYPO
+            sbert_std = np.load(os.path.join(sbert_emb_path, 'std_emb.npy')).mean()
 
             for feat in ['ope', 'agr', 'ext', 'con', 'neu', 'valence', 'arousal', 'ang', 'anx', 'dep']:
                 # Z-Score Normalization for the psychological features
