@@ -32,17 +32,16 @@ class WhiSPAModel(
             cache_dir=os.getenv('CACHE_DIR'),
         ).to(config.device)
 
-        self.sbert_model = AutoModel.from_pretrained(
-            config.linguistic_teacher_id,
-            cache_dir=os.getenv('CACHE_DIR')
-        )
+        self.linear = torch.nn.Linear(
+            in_features=self.config.hidden_size,
+            out_features=self.config.hidden_size,
+            bias=True
+        ).to(config.device)
+        self.activation = torch.nn.Tanh().to(config.device)
 
         if config.n_new_dims:
             # Learnable Projection Matrix (emb_dims x new_dims)
             self.projection = torch.nn.Linear(config.emb_dims, config.n_new_dims).to(config.device)
-
-        self.linear = self.sbert_model.pooler.dense.to(config.device)
-        self.activation = self.sbert_model.pooler.activation.to(config.device)
 
 
     def forward(self, audio_inputs, text_input_ids, text_attention_mask):
@@ -63,284 +62,284 @@ class WhiSPAModel(
         return embs
         
 
-    def expand_model(self):
-        # WHISPER ENCODER EXPANSION
-        self.whisper_model.encoder.conv1 = expand_conv1d_layer(self.whisper_model.encoder.conv1, added_out_channels=self.config.n_new_dims)
-        self.whisper_model.encoder.conv2 = expand_conv1d_layer(self.whisper_model.encoder.conv2, added_in_channels=self.config.n_new_dims, added_out_channels=self.config.n_new_dims)
+#     def expand_model(self):
+#         # WHISPER ENCODER EXPANSION
+#         self.whisper_model.encoder.conv1 = expand_conv1d_layer(self.whisper_model.encoder.conv1, added_out_channels=self.config.n_new_dims)
+#         self.whisper_model.encoder.conv2 = expand_conv1d_layer(self.whisper_model.encoder.conv2, added_in_channels=self.config.n_new_dims, added_out_channels=self.config.n_new_dims)
 
-        self.whisper_model.encoder.embed_positions = expand_embedding_layer(self.whisper_model.encoder.embed_positions, self.config.n_new_dims, distribution='zeros')
-        self.whisper_model.encoder.embed_positions.weight.requires_grad = False
+#         self.whisper_model.encoder.embed_positions = expand_embedding_layer(self.whisper_model.encoder.embed_positions, self.config.n_new_dims, distribution='zeros')
+#         self.whisper_model.encoder.embed_positions.weight.requires_grad = False
 
-        for layer in self.whisper_model.encoder.layers:
-            layer.self_attn.k_proj = expand_linear_layer(layer.self_attn.k_proj, self.config.n_new_dims, self.config.n_new_dims)
-            layer.self_attn.v_proj = expand_linear_layer(layer.self_attn.v_proj, self.config.n_new_dims, self.config.n_new_dims)
-            layer.self_attn.q_proj = expand_linear_layer(layer.self_attn.q_proj, self.config.n_new_dims, self.config.n_new_dims)
-            layer.self_attn.out_proj = expand_linear_layer(layer.self_attn.out_proj, self.config.n_new_dims, self.config.n_new_dims)
-            layer.self_attn_layer_norm = expand_layer_norm(layer.self_attn_layer_norm, self.config.n_new_dims)
-            layer.fc1 = expand_linear_layer(layer.fc1, added_in_features=self.config.n_new_dims)
-            layer.fc2 = expand_linear_layer(layer.fc2, added_out_features=self.config.n_new_dims)
-            layer.final_layer_norm = expand_layer_norm(layer.final_layer_norm, self.config.n_new_dims)
+#         for layer in self.whisper_model.encoder.layers:
+#             layer.self_attn.k_proj = expand_linear_layer(layer.self_attn.k_proj, self.config.n_new_dims, self.config.n_new_dims)
+#             layer.self_attn.v_proj = expand_linear_layer(layer.self_attn.v_proj, self.config.n_new_dims, self.config.n_new_dims)
+#             layer.self_attn.q_proj = expand_linear_layer(layer.self_attn.q_proj, self.config.n_new_dims, self.config.n_new_dims)
+#             layer.self_attn.out_proj = expand_linear_layer(layer.self_attn.out_proj, self.config.n_new_dims, self.config.n_new_dims)
+#             layer.self_attn_layer_norm = expand_layer_norm(layer.self_attn_layer_norm, self.config.n_new_dims)
+#             layer.fc1 = expand_linear_layer(layer.fc1, added_in_features=self.config.n_new_dims)
+#             layer.fc2 = expand_linear_layer(layer.fc2, added_out_features=self.config.n_new_dims)
+#             layer.final_layer_norm = expand_layer_norm(layer.final_layer_norm, self.config.n_new_dims)
 
-        self.whisper_model.encoder.layer_norm = expand_layer_norm(self.whisper_model.encoder.layer_norm, self.config.n_new_dims)
+#         self.whisper_model.encoder.layer_norm = expand_layer_norm(self.whisper_model.encoder.layer_norm, self.config.n_new_dims)
 
-        # WHISPER DECODER EXPANSION
-        self.whisper_model.decoder.embed_tokens = expand_embedding_layer(self.whisper_model.decoder.embed_tokens, self.config.n_new_dims, distribution='normal')
-        self.whisper_model.decoder.embed_positions = expand_positional_embedding(self.whisper_model.decoder.embed_positions, self.config.n_new_dims)
+#         # WHISPER DECODER EXPANSION
+#         self.whisper_model.decoder.embed_tokens = expand_embedding_layer(self.whisper_model.decoder.embed_tokens, self.config.n_new_dims, distribution='normal')
+#         self.whisper_model.decoder.embed_positions = expand_positional_embedding(self.whisper_model.decoder.embed_positions, self.config.n_new_dims)
 
-        for layer in self.whisper_model.decoder.layers:
-            layer.self_attn.k_proj = expand_linear_layer(layer.self_attn.k_proj, self.config.n_new_dims, self.config.n_new_dims)
-            layer.self_attn.v_proj = expand_linear_layer(layer.self_attn.v_proj, self.config.n_new_dims, self.config.n_new_dims)
-            layer.self_attn.q_proj = expand_linear_layer(layer.self_attn.q_proj, self.config.n_new_dims, self.config.n_new_dims)
-            layer.self_attn.out_proj = expand_linear_layer(layer.self_attn.out_proj, self.config.n_new_dims, self.config.n_new_dims)
-            layer.self_attn_layer_norm = expand_layer_norm(layer.self_attn_layer_norm, self.config.n_new_dims)
-            layer.encoder_attn.k_proj = expand_linear_layer(layer.encoder_attn.k_proj, self.config.n_new_dims, self.config.n_new_dims)
-            layer.encoder_attn.v_proj = expand_linear_layer(layer.encoder_attn.v_proj, self.config.n_new_dims, self.config.n_new_dims)
-            layer.encoder_attn.q_proj = expand_linear_layer(layer.encoder_attn.q_proj, self.config.n_new_dims, self.config.n_new_dims)
-            layer.encoder_attn.out_proj = expand_linear_layer(layer.encoder_attn.out_proj, self.config.n_new_dims, self.config.n_new_dims)
-            layer.encoder_attn_layer_norm = expand_layer_norm(layer.encoder_attn_layer_norm, self.config.n_new_dims)
-            layer.fc1 = expand_linear_layer(layer.fc1, added_in_features=self.config.n_new_dims)
-            layer.fc2 = expand_linear_layer(layer.fc2, added_out_features=self.config.n_new_dims)
-            layer.final_layer_norm = expand_layer_norm(layer.final_layer_norm, self.config.n_new_dims)
+#         for layer in self.whisper_model.decoder.layers:
+#             layer.self_attn.k_proj = expand_linear_layer(layer.self_attn.k_proj, self.config.n_new_dims, self.config.n_new_dims)
+#             layer.self_attn.v_proj = expand_linear_layer(layer.self_attn.v_proj, self.config.n_new_dims, self.config.n_new_dims)
+#             layer.self_attn.q_proj = expand_linear_layer(layer.self_attn.q_proj, self.config.n_new_dims, self.config.n_new_dims)
+#             layer.self_attn.out_proj = expand_linear_layer(layer.self_attn.out_proj, self.config.n_new_dims, self.config.n_new_dims)
+#             layer.self_attn_layer_norm = expand_layer_norm(layer.self_attn_layer_norm, self.config.n_new_dims)
+#             layer.encoder_attn.k_proj = expand_linear_layer(layer.encoder_attn.k_proj, self.config.n_new_dims, self.config.n_new_dims)
+#             layer.encoder_attn.v_proj = expand_linear_layer(layer.encoder_attn.v_proj, self.config.n_new_dims, self.config.n_new_dims)
+#             layer.encoder_attn.q_proj = expand_linear_layer(layer.encoder_attn.q_proj, self.config.n_new_dims, self.config.n_new_dims)
+#             layer.encoder_attn.out_proj = expand_linear_layer(layer.encoder_attn.out_proj, self.config.n_new_dims, self.config.n_new_dims)
+#             layer.encoder_attn_layer_norm = expand_layer_norm(layer.encoder_attn_layer_norm, self.config.n_new_dims)
+#             layer.fc1 = expand_linear_layer(layer.fc1, added_in_features=self.config.n_new_dims)
+#             layer.fc2 = expand_linear_layer(layer.fc2, added_out_features=self.config.n_new_dims)
+#             layer.final_layer_norm = expand_layer_norm(layer.final_layer_norm, self.config.n_new_dims)
 
-        self.whisper_model.decoder.layer_norm = expand_layer_norm(self.whisper_model.decoder.layer_norm, self.config.n_new_dims)
+#         self.whisper_model.decoder.layer_norm = expand_layer_norm(self.whisper_model.decoder.layer_norm, self.config.n_new_dims)
 
     
-    def _save_pretrained(self, local_dir: str):
-        os.makedirs(local_dir, exist_ok=True)
-        self.config.save_pretrained(local_dir)
-        torch.save(self.state_dict(), os.path.join(local_dir, 'pytorch_model.bin'))
+#     def _save_pretrained(self, local_dir: str):
+#         os.makedirs(local_dir, exist_ok=True)
+#         self.config.save_pretrained(local_dir)
+#         torch.save(self.state_dict(), os.path.join(local_dir, 'pytorch_model.bin'))
 
 
-    @classmethod
-    def _from_pretrained(cls, local_dir, **kwargs):
-        print("**Inside _from_pretrained** with local_dir=", local_dir)
-        config = WhiSPAConfig.from_pretrained(local_dir)
+#     @classmethod
+#     def _from_pretrained(cls, local_dir, **kwargs):
+#         print("**Inside _from_pretrained** with local_dir=", local_dir)
+#         config = WhiSPAConfig.from_pretrained(local_dir)
 
-        model = cls(config)
-        state_dict = torch.load(os.path.join(local_dir, "pytorch_model.bin"), map_location="cpu")
-        model.load_state_dict(state_dict)
+#         model = cls(config)
+#         state_dict = torch.load(os.path.join(local_dir, "pytorch_model.bin"), map_location="cpu")
+#         model.load_state_dict(state_dict)
 
-        return model
+#         return model
     
 
-    @classmethod
-    def from_pretrained(cls, model_id, revision=None, cache_dir=None, force_download=False, **hub_kwargs):
-        local_dir = snapshot_download(
-            repo_id=model_id,
-            revision=revision,
-            cache_dir=cache_dir,
-            force_download=force_download,
-            **hub_kwargs
-        )
-        return cls._from_pretrained(local_dir=local_dir)
+#     @classmethod
+#     def from_pretrained(cls, model_id, revision=None, cache_dir=None, force_download=False, **hub_kwargs):
+#         local_dir = snapshot_download(
+#             repo_id=model_id,
+#             revision=revision,
+#             cache_dir=cache_dir,
+#             force_download=force_download,
+#             **hub_kwargs
+#         )
+#         return cls._from_pretrained(local_dir=local_dir)
 
 
-def expand_conv1d_layer(conv1d_layer, added_in_channels=None, added_out_channels=None):
-    """
-    Expands the input and/or output channels of a Conv1d layer while retaining the original weights
-    and initializing the new channels with random values.
+# def expand_conv1d_layer(conv1d_layer, added_in_channels=None, added_out_channels=None):
+#     """
+#     Expands the input and/or output channels of a Conv1d layer while retaining the original weights
+#     and initializing the new channels with random values.
     
-    Args:
-        conv1d_layer (nn.Conv1d): Original Conv1d layer to expand.
-        added_in_channels (int, optional): Number of new input channels to add. If `None` or 0, input channels remain unchanged.
-        added_out_channels (int, optional): Number of new output channels to add. If `None` or 0, output channels remain unchanged.
+#     Args:
+#         conv1d_layer (nn.Conv1d): Original Conv1d layer to expand.
+#         added_in_channels (int, optional): Number of new input channels to add. If `None` or 0, input channels remain unchanged.
+#         added_out_channels (int, optional): Number of new output channels to add. If `None` or 0, output channels remain unchanged.
     
-    Returns:
-        nn.Conv1d: New Conv1d layer with expanded input and/or output channels.
-    """
-    old_weight = conv1d_layer.weight.data
-    old_bias = conv1d_layer.bias.data if conv1d_layer.bias is not None else None
+#     Returns:
+#         nn.Conv1d: New Conv1d layer with expanded input and/or output channels.
+#     """
+#     old_weight = conv1d_layer.weight.data
+#     old_bias = conv1d_layer.bias.data if conv1d_layer.bias is not None else None
 
-    # Determine new dimensions
-    new_out_channels = old_weight.shape[0] + (added_out_channels or 0)
-    new_in_channels = old_weight.shape[1] + (added_in_channels or 0)
-    kernel_size = conv1d_layer.kernel_size
-    stride = conv1d_layer.stride
-    padding = conv1d_layer.padding
+#     # Determine new dimensions
+#     new_out_channels = old_weight.shape[0] + (added_out_channels or 0)
+#     new_in_channels = old_weight.shape[1] + (added_in_channels or 0)
+#     kernel_size = conv1d_layer.kernel_size
+#     stride = conv1d_layer.stride
+#     padding = conv1d_layer.padding
 
-    # Create the new Conv1d layer
-    new_conv1d = torch.nn.Conv1d(
-        in_channels=new_in_channels,
-        out_channels=new_out_channels,
-        kernel_size=kernel_size,
-        stride=stride,
-        padding=padding,
-        bias=conv1d_layer.bias is not None,
-    )
+#     # Create the new Conv1d layer
+#     new_conv1d = torch.nn.Conv1d(
+#         in_channels=new_in_channels,
+#         out_channels=new_out_channels,
+#         kernel_size=kernel_size,
+#         stride=stride,
+#         padding=padding,
+#         bias=conv1d_layer.bias is not None,
+#     )
 
-    # Copy the old weights to the appropriate slice
-    new_weight = new_conv1d.weight.data
-    new_weight[:old_weight.shape[0], :old_weight.shape[1], :] = old_weight
+#     # Copy the old weights to the appropriate slice
+#     new_weight = new_conv1d.weight.data
+#     new_weight[:old_weight.shape[0], :old_weight.shape[1], :] = old_weight
 
-    # Initialize the new output channels (if any)
-    if added_out_channels:
-        torch.nn.init.normal_(new_weight[old_weight.shape[0]:, :, :], mean=0.0, std=0.01)
+#     # Initialize the new output channels (if any)
+#     if added_out_channels:
+#         torch.nn.init.normal_(new_weight[old_weight.shape[0]:, :, :], mean=0.0, std=0.01)
 
-    # Initialize the new input channels (if any)
-    if added_in_channels:
-        torch.nn.init.normal_(new_weight[:, old_weight.shape[1]:, :], mean=0.0, std=0.01)
+#     # Initialize the new input channels (if any)
+#     if added_in_channels:
+#         torch.nn.init.normal_(new_weight[:, old_weight.shape[1]:, :], mean=0.0, std=0.01)
 
-    # Copy and extend the bias if it exists
-    if old_bias is not None:
-        new_bias = torch.cat(
-            [old_bias, torch.zeros(added_out_channels or 0).to(old_bias.device)]
-        )
-        new_conv1d.bias.data = new_bias
+#     # Copy and extend the bias if it exists
+#     if old_bias is not None:
+#         new_bias = torch.cat(
+#             [old_bias, torch.zeros(added_out_channels or 0).to(old_bias.device)]
+#         )
+#         new_conv1d.bias.data = new_bias
 
-    return new_conv1d
+#     return new_conv1d
 
 
-def expand_embedding_layer(embedding_layer, added_dimensions, distribution='normal'):
-    """
-    Expands the embedding dimensions of a torch.nn.Embedding layer while retaining
-    the original weights and initializing the new dimensions with random values or zeros.
+# def expand_embedding_layer(embedding_layer, added_dimensions, distribution='normal'):
+#     """
+#     Expands the embedding dimensions of a torch.nn.Embedding layer while retaining
+#     the original weights and initializing the new dimensions with random values or zeros.
     
-    Args:
-        embedding_layer (torch.nn.Embedding): Original embedding layer to expand.
-        added_dimensions (int): Number of new dimensions to add to the embedding.
-        distribution (str): Distribution to use for initializing new dimensions ('normal' or 'zeros').
+#     Args:
+#         embedding_layer (torch.nn.Embedding): Original embedding layer to expand.
+#         added_dimensions (int): Number of new dimensions to add to the embedding.
+#         distribution (str): Distribution to use for initializing new dimensions ('normal' or 'zeros').
     
-    Returns:
-        torch.nn.Embedding: New embedding layer with expanded dimensions.
-    """
-    # Get the original weights and parameters
-    old_weight = embedding_layer.weight.data
-    padding_idx = embedding_layer.padding_idx  # Keep the padding index
+#     Returns:
+#         torch.nn.Embedding: New embedding layer with expanded dimensions.
+#     """
+#     # Get the original weights and parameters
+#     old_weight = embedding_layer.weight.data
+#     padding_idx = embedding_layer.padding_idx  # Keep the padding index
 
-    # Create the new embedding layer with expanded dimensions
-    new_num_embeddings = old_weight.shape[0]
-    new_embedding_dim = old_weight.shape[1] + added_dimensions
-    new_embedding_layer = torch.nn.Embedding(new_num_embeddings, new_embedding_dim, padding_idx=padding_idx)
+#     # Create the new embedding layer with expanded dimensions
+#     new_num_embeddings = old_weight.shape[0]
+#     new_embedding_dim = old_weight.shape[1] + added_dimensions
+#     new_embedding_layer = torch.nn.Embedding(new_num_embeddings, new_embedding_dim, padding_idx=padding_idx)
 
-    # Copy the old weights into the new embedding layer
-    new_embedding_layer.weight.data[:, :old_weight.shape[1]] = old_weight
+#     # Copy the old weights into the new embedding layer
+#     new_embedding_layer.weight.data[:, :old_weight.shape[1]] = old_weight
 
-    # Initialize the new dimensions with random values or zeros
-    if distribution == 'normal':
-        torch.nn.init.normal_(new_embedding_layer.weight.data[:, old_weight.shape[1]:], mean=0.0, std=0.01)
-    else:
-        torch.nn.init.zeros_(new_embedding_layer.weight.data[:, old_weight.shape[1]:])
+#     # Initialize the new dimensions with random values or zeros
+#     if distribution == 'normal':
+#         torch.nn.init.normal_(new_embedding_layer.weight.data[:, old_weight.shape[1]:], mean=0.0, std=0.01)
+#     else:
+#         torch.nn.init.zeros_(new_embedding_layer.weight.data[:, old_weight.shape[1]:])
 
-    # Ensure padding_idx row remains zero-initialized
-    if padding_idx is not None:
-        new_embedding_layer.weight.data[padding_idx] = 0
+#     # Ensure padding_idx row remains zero-initialized
+#     if padding_idx is not None:
+#         new_embedding_layer.weight.data[padding_idx] = 0
 
-    return new_embedding_layer
-
-
-
-def expand_linear_layer(linear_layer, added_in_features=None, added_out_features=None):
-    """
-    Expands the weight and bias dimensions of a torch.nn.Linear layer.
-
-    Args:
-        linear_layer (torch.nn.Linear): Original linear layer to expand.
-        added_in_features (int or None): Number of new input features to add. If None, does not modify input features.
-        added_out_features (int or None): Number of new output features to add. If None, does not modify output features.
-
-    Returns:
-        torch.nn.Linear: New linear layer with expanded dimensions.
-    """
-    added_in_features = added_in_features or 0
-    added_out_features = added_out_features or 0
-
-    # Get original dimensions
-    old_in_features = linear_layer.weight.shape[1]
-    old_out_features = linear_layer.weight.shape[0]
-    old_bias = linear_layer.bias.data if linear_layer.bias is not None else None
-
-    # Calculate new dimensions
-    new_in_features = old_in_features + added_in_features
-    new_out_features = old_out_features + added_out_features
-
-    # Create a new linear layer
-    new_linear_layer = torch.nn.Linear(new_in_features, new_out_features, bias=linear_layer.bias is not None)
-
-    # Copy old weights into the new layer's weights
-    new_linear_layer.weight.data[:old_out_features, :old_in_features] = linear_layer.weight.data
-
-    # Initialize new weights for added dimensions
-    if added_out_features > 0:
-        torch.nn.init.normal_(
-            new_linear_layer.weight.data[old_out_features:, :old_in_features], mean=0.0, std=0.01
-        )
-    if added_in_features > 0:
-        torch.nn.init.normal_(
-            new_linear_layer.weight.data[:old_out_features, old_in_features:], mean=0.0, std=0.01
-        )
-    if added_out_features > 0 and added_in_features > 0:
-        torch.nn.init.normal_(
-            new_linear_layer.weight.data[old_out_features:, old_in_features:], mean=0.0, std=0.01
-        )
-
-    # Handle bias expansion
-    if old_bias is not None:
-        new_linear_layer.bias.data[:old_out_features] = old_bias
-        if added_out_features > 0:
-            torch.nn.init.zeros_(new_linear_layer.bias.data[old_out_features:])
-
-    return new_linear_layer
+#     return new_embedding_layer
 
 
-def expand_layer_norm(layer_norm, added_dimensions=None):
-    """
-    Expands the dimensions of a torch.nn.LayerNorm layer.
 
-    Args:
-        layer_norm (torch.nn.LayerNorm): Original layer norm layer to expand.
-        added_dimensions (int or None): Number of new dimensions to add. If None, no dimensions are added.
+# def expand_linear_layer(linear_layer, added_in_features=None, added_out_features=None):
+#     """
+#     Expands the weight and bias dimensions of a torch.nn.Linear layer.
 
-    Returns:
-        torch.nn.LayerNorm: New layer norm with expanded dimensions.
-    """
-    # Get original dimensions
-    old_num_features = layer_norm.normalized_shape[0]
-    new_num_features = old_num_features + added_dimensions
+#     Args:
+#         linear_layer (torch.nn.Linear): Original linear layer to expand.
+#         added_in_features (int or None): Number of new input features to add. If None, does not modify input features.
+#         added_out_features (int or None): Number of new output features to add. If None, does not modify output features.
 
-    # Create a new LayerNorm layer
-    new_layer_norm = torch.nn.LayerNorm(new_num_features, eps=layer_norm.eps, elementwise_affine=layer_norm.elementwise_affine)
+#     Returns:
+#         torch.nn.Linear: New linear layer with expanded dimensions.
+#     """
+#     added_in_features = added_in_features or 0
+#     added_out_features = added_out_features or 0
 
-    # Copy old weights and initialize new ones
-    if layer_norm.elementwise_affine:
-        old_weight = layer_norm.weight.data
-        old_bias = layer_norm.bias.data if layer_norm.bias is not None else None
+#     # Get original dimensions
+#     old_in_features = linear_layer.weight.shape[1]
+#     old_out_features = linear_layer.weight.shape[0]
+#     old_bias = linear_layer.bias.data if linear_layer.bias is not None else None
 
-        # Initialize new weights
-        new_layer_norm.weight.data[:old_num_features] = old_weight
-        torch.nn.init.ones_(new_layer_norm.weight.data[old_num_features:])
+#     # Calculate new dimensions
+#     new_in_features = old_in_features + added_in_features
+#     new_out_features = old_out_features + added_out_features
 
-        # Initialize new biases if applicable
-        if old_bias is not None:
-            new_layer_norm.bias.data[:old_num_features] = old_bias
-            torch.nn.init.zeros_(new_layer_norm.bias.data[old_num_features:])
+#     # Create a new linear layer
+#     new_linear_layer = torch.nn.Linear(new_in_features, new_out_features, bias=linear_layer.bias is not None)
 
-    return new_layer_norm
+#     # Copy old weights into the new layer's weights
+#     new_linear_layer.weight.data[:old_out_features, :old_in_features] = linear_layer.weight.data
+
+#     # Initialize new weights for added dimensions
+#     if added_out_features > 0:
+#         torch.nn.init.normal_(
+#             new_linear_layer.weight.data[old_out_features:, :old_in_features], mean=0.0, std=0.01
+#         )
+#     if added_in_features > 0:
+#         torch.nn.init.normal_(
+#             new_linear_layer.weight.data[:old_out_features, old_in_features:], mean=0.0, std=0.01
+#         )
+#     if added_out_features > 0 and added_in_features > 0:
+#         torch.nn.init.normal_(
+#             new_linear_layer.weight.data[old_out_features:, old_in_features:], mean=0.0, std=0.01
+#         )
+
+#     # Handle bias expansion
+#     if old_bias is not None:
+#         new_linear_layer.bias.data[:old_out_features] = old_bias
+#         if added_out_features > 0:
+#             torch.nn.init.zeros_(new_linear_layer.bias.data[old_out_features:])
+
+#     return new_linear_layer
 
 
-def expand_positional_embedding(positional_embedding_layer, added_dimensions):
-    """
-    Expands the embedding dimensions of a WhisperPositionalEmbedding layer while retaining
-    the original weights and initializing the new dimensions with random values.
+# def expand_layer_norm(layer_norm, added_dimensions=None):
+#     """
+#     Expands the dimensions of a torch.nn.LayerNorm layer.
+
+#     Args:
+#         layer_norm (torch.nn.LayerNorm): Original layer norm layer to expand.
+#         added_dimensions (int or None): Number of new dimensions to add. If None, no dimensions are added.
+
+#     Returns:
+#         torch.nn.LayerNorm: New layer norm with expanded dimensions.
+#     """
+#     # Get original dimensions
+#     old_num_features = layer_norm.normalized_shape[0]
+#     new_num_features = old_num_features + added_dimensions
+
+#     # Create a new LayerNorm layer
+#     new_layer_norm = torch.nn.LayerNorm(new_num_features, eps=layer_norm.eps, elementwise_affine=layer_norm.elementwise_affine)
+
+#     # Copy old weights and initialize new ones
+#     if layer_norm.elementwise_affine:
+#         old_weight = layer_norm.weight.data
+#         old_bias = layer_norm.bias.data if layer_norm.bias is not None else None
+
+#         # Initialize new weights
+#         new_layer_norm.weight.data[:old_num_features] = old_weight
+#         torch.nn.init.ones_(new_layer_norm.weight.data[old_num_features:])
+
+#         # Initialize new biases if applicable
+#         if old_bias is not None:
+#             new_layer_norm.bias.data[:old_num_features] = old_bias
+#             torch.nn.init.zeros_(new_layer_norm.bias.data[old_num_features:])
+
+#     return new_layer_norm
+
+
+# def expand_positional_embedding(positional_embedding_layer, added_dimensions):
+#     """
+#     Expands the embedding dimensions of a WhisperPositionalEmbedding layer while retaining
+#     the original weights and initializing the new dimensions with random values.
     
-    Args:
-        positional_embedding_layer (WhisperPositionalEmbedding): Original positional embedding layer.
-        added_dimensions (int): Number of new dimensions to add to the embedding.
+#     Args:
+#         positional_embedding_layer (WhisperPositionalEmbedding): Original positional embedding layer.
+#         added_dimensions (int): Number of new dimensions to add to the embedding.
     
-    Returns:
-        WhisperPositionalEmbedding: New positional embedding layer with expanded dimensions.
-    """
-    # Get the original weights and properties
-    old_weight = positional_embedding_layer.weight.data
-    seq_len, old_dim = old_weight.shape
-    new_dim = old_dim + added_dimensions
+#     Returns:
+#         WhisperPositionalEmbedding: New positional embedding layer with expanded dimensions.
+#     """
+#     # Get the original weights and properties
+#     old_weight = positional_embedding_layer.weight.data
+#     seq_len, old_dim = old_weight.shape
+#     new_dim = old_dim + added_dimensions
 
-    # Create a new positional embedding layer of the same type
-    new_positional_embedding_layer = type(positional_embedding_layer)(seq_len, new_dim)
+#     # Create a new positional embedding layer of the same type
+#     new_positional_embedding_layer = type(positional_embedding_layer)(seq_len, new_dim)
 
-    # Copy over the original weights
-    new_positional_embedding_layer.weight.data[:, :old_dim] = old_weight
+#     # Copy over the original weights
+#     new_positional_embedding_layer.weight.data[:, :old_dim] = old_weight
 
-    # Initialize the new dimensions with random values
-    torch.nn.init.normal_(new_positional_embedding_layer.weight.data[:, old_dim:], mean=0.0, std=0.01)
+#     # Initialize the new dimensions with random values
+#     torch.nn.init.normal_(new_positional_embedding_layer.weight.data[:, old_dim:], mean=0.0, std=0.01)
 
-    return new_positional_embedding_layer
+#     return new_positional_embedding_layer

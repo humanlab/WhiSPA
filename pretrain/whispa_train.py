@@ -3,6 +3,16 @@ import sys, os
 BASE_DIR = os.path.join(os.path.dirname(__file__), '..')
 sys.path.append(os.path.abspath(BASE_DIR))
 
+import logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler("logs/training.log"),
+    ],
+)
+
 import time
 from datetime import timedelta
 from collections import OrderedDict
@@ -14,6 +24,7 @@ from transformers import (
     AutoProcessor,
     AutoModel,
 )
+import wandb
 from tqdm import tqdm
 from matplotlib import pyplot as plt
 from pprint import pprint

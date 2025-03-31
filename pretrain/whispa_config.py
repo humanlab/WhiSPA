@@ -9,7 +9,6 @@ class WhiSPAConfig():
         whisper_model_id: str = 'openai/whisper-medium',
         pooling_mode: str = 'mean',
         n_new_dims: int = 0,
-        # use_psych: bool = False,
         loss: str = 'NCE',
         alpha: float = 0.5,
         beta: float = 0.5,
@@ -24,38 +23,15 @@ class WhiSPAConfig():
         device: str = 'cpu',
         **kwargs,
     ):
-        whisper_model_id_choices = [
-            'openai/whisper-tiny',
-            'openai/whisper-small',
-            'openai/whisper-medium'
-        ]
-        linguistic_teacher_id_choices = [
-            'sentence-transformers/all-MiniLM-L12-v2',
-            'sentence-transformers/all-mpnet-base-v2',
-            'sentence-transformers/all-roberta-large-v1'
-        ]
-        acoustic_teacher_id_choices = [
-            'facebook/hubert-large-ls960-ft', # ???
-            'facebook/hubert-large-ls960-ft', # ???
-            'facebook/hubert-large-ls960-ft'
-        ]
-        emb_dims_choices = [384, 768, 1024]
-
-        try:
-            self.emb_dims = emb_dims_choices[whisper_model_id_choices.index(whisper_model_id)]
-            self.linguistic_teacher_id = linguistic_teacher_id_choices[whisper_model_id_choices.index(whisper_model_id)]
-            self.acoustic_teacher_id = acoustic_teacher_id_choices[whisper_model_id_choices.index(whisper_model_id)]
-            self.whisper_model_id = whisper_model_id
-        except ValueError:
-            self.emb_dims = emb_dims_choices[-1]
-            self.linguistic_teacher_id = linguistic_teacher_id_choices[-1]
-            self.acoustic_teacher_id = acoustic_teacher_id_choices[-1]
-            self.whisper_model_id = whisper_model_id_choices[-1]
+        # Model IDs
+        self.whisper_model_id = whisper_model_id
+        self.linguistic_teacher_id = 'jinaai/jina-embeddings-v3'
+        self.acoustic_teacher_id = 'facebook/hubert-large-ls960-ft'
                 
         # Model hyperparameters
+        self.hidden_size = 1024
         self.pooling_mode = pooling_mode
         self.n_new_dims = n_new_dims
-        # self.use_psych = use_psych
         self.loss = loss
         self.alpha = alpha
         self.beta = beta

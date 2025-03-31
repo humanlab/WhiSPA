@@ -19,6 +19,7 @@ from transformers import (
     Wav2Vec2BertModel,
     HubertModel
 )
+import wandb
 import pandas as pd
 from tqdm import tqdm
 from dotenv import load_dotenv
@@ -72,7 +73,13 @@ def load_args():
 def load_models(config, load_name):
     processor = None
     tokenizer = None
-    if 'sentence-transformers/' in load_name:
+    if 'jinaai' in load_name:
+        model = AutoModel.from_pretrained(
+            load_name,
+            cache_dir=os.getenv('CACHE_DIR'),
+            trust_remote_code=True
+        ).to(config.device)
+    elif 'sentence-transformers/' in load_name:
         # Load the pre-trained SentenceTransformer model and tokenizer
         model = AutoModel.from_pretrained(load_name, cache_dir=os.getenv('CACHE_DIR')).to(config.device)
         tokenizer = AutoTokenizer.from_pretrained(
@@ -124,7 +131,7 @@ def load_models(config, load_name):
             print("CUDA is not available. Only CPU will be used.\n")
         model = torch.nn.DataParallel(model, device_ids=gpus)
 
-    if not ('sentence-transformers/' in load_name or 'facebook/' in load_name or 'hf-audio/' in load_name):
+    if not ('jinaai/' in load_name or 'sentence-transformers/' in load_name or 'facebook/' in load_name or 'hf-audio/' in load_name):
         print('Instantiating WhiSPA with loaded state dict...')
         state_dict = torch.load(os.path.join(os.getenv('CHECKPOINT_DIR'), load_name, 'best.pth'))
         try:
