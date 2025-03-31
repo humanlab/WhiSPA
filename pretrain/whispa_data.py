@@ -13,8 +13,8 @@ class AudioDataset(torch.utils.data.Dataset):
     
     def __init__(self, config, processor, mode='train'):
         self.config = config
-        self.hitop_segments_df = pd.read_csv(f'{os.getenv("HITOP_DATA_DIR")}whispa_dataset.csv')
-        self.wtc_segments_df = pd.read_csv(f'{os.getenv("WTC_DATA_DIR")}whispa_dataset.csv')
+        self.hitop_segments_df = pd.read_csv(f'{os.getenv("HITOP_DATA_DIR")}/whispa_dataset.csv')
+        self.wtc_segments_df = pd.read_csv(f'{os.getenv("WTC_DATA_DIR")}/whispa_dataset.csv')
         self.processor = processor
         self.mode = mode
 

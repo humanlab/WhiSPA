@@ -97,7 +97,8 @@ def load_args():
         default='openai/whisper-tiny',
         choices=[
             'openai/whisper-tiny',
-            'openai/whisper-small'
+            'openai/whisper-small',
+            'openai/whisper-medium',
         ],
         type=str,
         help='Specify the model_id of the Whisper variant on HuggingFace repository'
@@ -134,7 +135,7 @@ def load_args():
     )
     parser.add_argument(
         '--loss',
-        default='CS',
+        default='NCE',
         choices=[
             'CS',
             'NCE',

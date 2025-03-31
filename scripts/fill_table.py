@@ -37,7 +37,7 @@ def get_sql_credentials(filename):
         host='localhost',
         user=usr,
         password=pwd,
-        database='HiTOP'
+        database='whispa'
     )
     return connection, connection.cursor()
 
@@ -77,7 +77,7 @@ def driver(connection, cursor, table_name, csv_path, no_agg):
 
 
     if no_agg:
-        segments_300 = pd.read_csv(f'{os.getenv("WHISPA_DIR")}whispa_affect_segments.csv')['message_id']
+        segments_300 = pd.read_csv(f'{os.getenv("WHISPA_DIR")}/whispa_affect_segments.csv')['message_id']
 
         wtc_emb_df = pd.read_csv(os.path.join(os.path.dirname(csv_path), 'wtc_embeddings.csv'))
         wtc_emb_df = wtc_emb_df[wtc_emb_df['message_id'].isin(segments_300)]
@@ -91,7 +91,7 @@ def driver(connection, cursor, table_name, csv_path, no_agg):
                 values = (row['message_id'], feat_name, value, value)
                 cursor.execute(insert_query, values)
     else:
-        df = pd.read_csv(f'{segments_path}whispa_dataset.csv')[['user_id', 'message_id']].merge(pd.read_csv(csv_path), on='message_id', how='left')
+        df = pd.read_csv(f'{segments_path}/whispa_dataset.csv')[['user_id', 'message_id']].merge(pd.read_csv(csv_path), on='message_id', how='left')
         user_ids = np.unique(df['user_id'])
         for idx, user_id in enumerate(user_ids):
             print(f'[{idx + 1}/{len(user_ids)}]\tuser_id: {user_id}')

@@ -6,7 +6,7 @@ import torch
 class WhiSPAConfig():
     def __init__(
         self,
-        whisper_model_id: str = 'openai/whisper-tiny',
+        whisper_model_id: str = 'openai/whisper-medium',
         pooling_mode: str = 'mean',
         with_bidirectionality: bool = False,
         n_new_dims: int = 0,
