@@ -1,5 +1,5 @@
 .env
-/analysis
+/wandb
 /logs
 /loss
 /notebooks
