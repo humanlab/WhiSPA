@@ -338,6 +338,7 @@ def train(
                 sbert_embs = torch.tensor(sbert.module.encode(
                     batch['message'],
                     task='classification',
+                    show_progress_bar=False,
                     truncate_dim=config.hidden_size
                 ), dtype=torch.float32, device=config.device)
 
@@ -397,6 +398,7 @@ def train(
                 sbert_embs = torch.tensor(sbert.module.encode(
                     batch['message'],
                     task='classification',
+                    show_progress_bar=False,
                     truncate_dim=config.hidden_size
                 ), dtype=torch.float32, device=config.device)
 
