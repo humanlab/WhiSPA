@@ -61,7 +61,7 @@ def nce_loss(z_a, z_b, tau=0.1, pooling_mode='sum'):
     return losses.sum() if pooling_mode == 'sum' else losses.mean()
 
 
-def dwd_loss(whispa_embs, sbert_embs, hubert_embs, psych_embs, alpha=0.5, beta=0.5):
+def dwd_loss(whispa_embs, sbert_embs, hubert_embs, psych_embs, alpha=0.5, beta=0.5, rho=0.0, tau=0.1):
     """
         Dual-Weighed Distillation Loss
         ------------------------------
@@ -69,9 +69,12 @@ def dwd_loss(whispa_embs, sbert_embs, hubert_embs, psych_embs, alpha=0.5, beta=0
         ------------------------------
     """
     if psych_embs:
-        return alpha * nce_loss(whispa_embs[:-10], sbert_embs) + beta * nce_loss(whispa_embs[:-10], hubert_embs) + nce_loss(whispa_embs[-10:], psych_embs)
+        return alpha * nce_loss(whispa_embs[:-10], sbert_embs, tau) + \
+            beta * nce_loss(whispa_embs[:-10], hubert_embs, tau) + \
+            rho * nce_loss(whispa_embs[-10:], psych_embs, tau)
     else:
-        return alpha * nce_loss(whispa_embs, sbert_embs) + beta * nce_loss(whispa_embs, hubert_embs)
+        return alpha * nce_loss(whispa_embs, sbert_embs, tau) + \
+            beta * nce_loss(whispa_embs, hubert_embs, tau)
 
 
 def mow_loss():

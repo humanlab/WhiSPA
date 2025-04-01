@@ -339,7 +339,7 @@ def train(
                     batch['message'],
                     task='classification',
                     truncate_dim=config.hidden_size
-                ), dtype=torch.float32, device=config.device)
+                ))
 
                 # Get HuBERT's MEAN embedding
                 hubert_embs = hubert(batch['hubert_inputs'].to(config.device)).last_hidden_state.mean(1)
@@ -398,7 +398,7 @@ def train(
                     batch['message'],
                     task='classification',
                     truncate_dim=config.hidden_size
-                ), dtype=torch.float32, device=config.device)
+                ))
 
                 # Get HuBERT's MEAN embedding
                 hubert_embs = hubert(batch['hubert_inputs'].to(config.device)).last_hidden_state.mean(1)

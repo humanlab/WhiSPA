@@ -333,40 +333,38 @@ def train(
             ).to(config.device)
             
             # Forward pass
-            with torch.no_grad():
-                # Get SBERT's MEAN embedding
-                sbert_embs = torch.tensor(sbert.module.encode(
-                    batch['message'],
-                    task='classification',
-                    truncate_dim=config.hidden_size
-                ), dtype=torch.float32, device=config.device)
+            with torch.amp.autocast(config.device):
 
-                # Get HuBERT's MEAN embedding
-                hubert_embs = hubert(batch['hubert_inputs'].to(config.device)).last_hidden_state.mean(1)
+                with torch.no_grad():
+                    # Get SBERT's MEAN embedding
+                    sbert_embs = sbert.module.encode(batch['message'], task='classification', truncate_dims=config.hidden_size)
 
-            # Augment with psychological features
-            psych_embs = batch['psych_emb'].to(config.device) if config.n_new_dims else None
+                    # Get HuBERT's MEAN embedding
+                    hubert_embs = hubert(batch['hubert_inputs'].to(config.device)).last_hidden_state.mean(1)
 
-            # Get WhiSPA's embedding
-            whispa_embs = whispa(
-                batch['whisper_inputs'].to(config.device),
-                inputs['input_ids'],
-                inputs['attention_mask']
-            )
+                # Augment with psychological features
+                psych_embs = batch['psych_emb'].to(config.device) if config.n_new_dims else None
 
-            # Apply loss functions on embeddings
-            loss = loss_func(
-                whispa_embs,
-                sbert_embs,
-                hubert_embs,
-                psych_embs,
-                config.alpha,
-                config.beta,
-                config.rho,
-                config.tau,
-            )
-            epoch_train_loss += loss.item()
-            wandb.log({"train_loss": loss.item()})
+                # Get WhiSPA's embedding
+                whispa_embs = whispa(
+                    batch['whisper_inputs'].to(config.device),
+                    inputs['input_ids'],
+                    inputs['attention_mask']
+                )
+
+                # Apply loss functions on embeddings
+                loss = loss_func(
+                    whispa_embs,
+                    sbert_embs,
+                    hubert_embs,
+                    psych_embs,
+                    config.alpha,
+                    config.beta,
+                    config.rho,
+                    config.tau,
+                )
+                epoch_train_loss += loss.item()
+                wandb.log({"train_loss": loss.item()})
 
             # Scale the losses and perform backward pass
             scaler.scale(loss).backward()
@@ -393,39 +391,37 @@ def train(
                     return_tensors='pt'
                 ).to(config.device)
                 
-                # Get SBERT's MEAN embedding
-                sbert_embs = torch.tensor(sbert.module.encode(
-                    batch['message'],
-                    task='classification',
-                    truncate_dim=config.hidden_size
-                ), dtype=torch.float32, device=config.device)
+                # Forward pass
+                with torch.amp.autocast(config.device):
+                    # Get SBERT's MEAN embedding
+                    sbert_embs = sbert.module.encode(batch['message'], task='classification', truncate_dims=config.hidden_size)
 
-                # Get HuBERT's MEAN embedding
-                hubert_embs = hubert(batch['hubert_inputs'].to(config.device)).last_hidden_state.mean(1)
+                    # Get HuBERT's MEAN embedding
+                    hubert_embs = hubert(batch['hubert_inputs'].to(config.device)).last_hidden_state.mean(1)
 
-                # Augment with psychological features
-                psych_embs = batch['psych_emb'].to(config.device) if config.n_new_dims else None
+                    # Augment with psychological features
+                    psych_embs = batch['psych_emb'].to(config.device) if config.n_new_dims else None
 
-                # Get WhiSPA's embedding
-                whispa_embs = whispa(
-                    batch['whisper_inputs'].to(config.device),
-                    inputs['input_ids'],
-                    inputs['attention_mask']
-                )
+                    # Get WhiSPA's embedding
+                    whispa_embs = whispa(
+                        batch['whisper_inputs'].to(config.device),
+                        inputs['input_ids'],
+                        inputs['attention_mask']
+                    )
 
-                # Apply loss functions on embeddings
-                loss = loss_func(
-                    whispa_embs,
-                    sbert_embs,
-                    hubert_embs,
-                    psych_embs,
-                    config.alpha,
-                    config.beta,
-                    config.rho,
-                    config.tau,
-                )
-                epoch_val_loss += loss.item()
-                wandb.log({"train_loss": loss.item()})
+                    # Apply loss functions on embeddings
+                    loss = loss_func(
+                        whispa_embs,
+                        sbert_embs,
+                        hubert_embs,
+                        psych_embs,
+                        config.alpha,
+                        config.beta,
+                        config.rho,
+                        config.tau,
+                    )
+                    epoch_val_loss += loss.item()
+                    wandb.log({"train_loss": loss.item()})
 
         # Adjust the learning rate based on validation loss
         scheduler.step(epoch_val_loss)

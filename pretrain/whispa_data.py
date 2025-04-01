@@ -11,19 +11,18 @@ load_dotenv()
 
 class AudioDataset(torch.utils.data.Dataset):
     
-    def __init__(self, config, processors, use_psych=False, mode='train'):
+    def __init__(self, config, processors, mode='train'):
         self.config = config
         self.hitop_segments_df = pd.read_csv(f'{os.getenv("HITOP_DATA_DIR")}/whispa_dataset.csv')
         self.wtc_segments_df = pd.read_csv(f'{os.getenv("WTC_DATA_DIR")}/whispa_dataset.csv')
         self.processors = processors
-        self.use_psych = use_psych
         self.mode = mode
 
-        if mode == 'train' and self.use_psych:
+        if mode == 'train' and self.config.n_new_dims:
             # Load SBERT Mean and Standard Dimensional Distribution
-            sbert_emb_path = os.path.join(os.getenv('EMBEDDINGS_DIR'), config.sbert_model_id.replace('sentence-transformers/', ''))
+            sbert_emb_path = os.path.join(os.getenv('EMBEDDINGS_DIR'), config.sbert_model_id.replace('jinaai/', ''))
             sbert_mean = np.load(os.path.join(sbert_emb_path, 'mean_emb.npy')).mean()
-            sbert_std = np.load(os.path.join(sbert_emb_path, 'std_emb.npy')).mean() # THIS IS NOT A TYPO
+            sbert_std = np.load(os.path.join(sbert_emb_path, 'std_emb.npy')).mean()
 
             for feat in ['ope', 'agr', 'ext', 'con', 'neu', 'valence', 'arousal', 'ang', 'anx', 'dep']:
                 # Z-Score Normalization for the psychological features
@@ -57,18 +56,13 @@ class AudioDataset(torch.utils.data.Dataset):
                 except:
                     audio_input = audio_input['input_values']
             audio_inputs.append(audio_input)
-            # if isinstance(self.processor, transformers.models.whisper.processing_whisper.WhisperProcessor) \
-            # or isinstance(self.processor, transformers.models.wav2vec2_bert.processing_wav2vec2_bert.Wav2Vec2BertProcessor):
-            #     audio_inputs = audio_inputs['input_features']
-            # elif isinstance(self.processor, transformers.models.wav2vec2.processing_wav2vec2.Wav2Vec2Processor):
-            #     audio_inputs = audio_inputs['input_values']
         
         if self.mode == 'train':
             return (
                 audio_inputs[0],
                 df.iloc[i]['message'],
                 audio_inputs[1],
-                torch.from_numpy(df.iloc[i][4:].to_numpy(dtype=np.float32)).unsqueeze(0) if self.use_psych else None
+                torch.from_numpy(df.iloc[i][4:].to_numpy(dtype=np.float32)).unsqueeze(0) if self.config.n_new_dims else None
             )
         elif self.mode == 'inference':
             return (

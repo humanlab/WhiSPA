@@ -1,0 +1,13 @@
+/cronus_data/rrao/conda_envs/speech/lib/python3.10/site-packages/torch/optim/lr_scheduler.py:60: UserWarning: The verbose parameter is deprecated. Please use get_last_lr() to access the learning rate.
+  warnings.warn(
+Epoch 1/1 - Training:   0%|                                                                                                                          | 0/290402 [00:00<?, ?it/s]
+Traceback (most recent call last):
+  File "/home/rrao/workspace/WhiSPA/pretrain/whispa_train.py", line 567, in <module>
+    main()
+  File "/home/rrao/workspace/WhiSPA/pretrain/whispa_train.py", line 542, in main
+    train(
+  File "/home/rrao/workspace/WhiSPA/pretrain/whispa_train.py", line 340, in train
+    sbert_embs = sbert.encode(batch['message'], task='classification', truncate_dims=config.hidden_size)
+  File "/cronus_data/rrao/conda_envs/speech/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1729, in __getattr__
+    raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
+AttributeError: 'DataParallel' object has no attribute 'encode'
