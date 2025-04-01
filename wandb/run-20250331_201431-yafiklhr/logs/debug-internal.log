@@ -1,7 +1,0 @@
-{"time":"2025-03-31T20:14:31.856724261-04:00","level":"INFO","msg":"stream: starting","core version":"0.19.8","symlink path":"/home/rrao/workspace/WhiSPA/wandb/run-20250331_201431-yafiklhr/logs/debug-core.log"}
-{"time":"2025-03-31T20:14:32.379943828-04:00","level":"INFO","msg":"created new stream","id":"yafiklhr"}
-{"time":"2025-03-31T20:14:32.380009405-04:00","level":"INFO","msg":"stream: started","id":"yafiklhr"}
-{"time":"2025-03-31T20:14:32.380036049-04:00","level":"INFO","msg":"handler: started","stream_id":"yafiklhr"}
-{"time":"2025-03-31T20:14:32.38007226-04:00","level":"INFO","msg":"writer: Do: started","stream_id":"yafiklhr"}
-{"time":"2025-03-31T20:14:32.380047504-04:00","level":"INFO","msg":"sender: started","stream_id":"yafiklhr"}
-{"time":"2025-03-31T20:14:32.648493921-04:00","level":"INFO","msg":"Starting system monitor"}
