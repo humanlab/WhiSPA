@@ -3,6 +3,16 @@ import sys, os
 BASE_DIR = os.path.join(os.path.dirname(__file__), '..')
 sys.path.append(os.path.abspath(BASE_DIR))
 
+import logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler("logs/training.log"),
+    ],
+)
+
 import time
 from datetime import timedelta
 import argparse
@@ -76,55 +86,68 @@ def load_args():
     return parser.parse_args()
 
 
-def load_models(config, load_name):
+def load_models(config, load_name, hf_model_id):
     processor = None
     tokenizer = None
-    if 'jinaai' in load_name:
-        model = AutoModel.from_pretrained(
-            load_name,
-            cache_dir=os.getenv('CACHE_DIR'),
-            trust_remote_code=True
-        ).to(config.device)
-    elif 'sentence-transformers/' in load_name:
-        # Load the pre-trained SentenceTransformer model and tokenizer
-        model = AutoModel.from_pretrained(load_name, cache_dir=os.getenv('CACHE_DIR')).to(config.device)
-        tokenizer = AutoTokenizer.from_pretrained(
-            load_name,
-            cache_dir=os.getenv('CACHE_DIR'),
-            TOKENIZERS_PARALLELISM=False
-        )
-    elif 'wav2vec2-bert' in load_name:
-        # Load the Wav2Vec2-BERT model and processor
-        model = Wav2Vec2BertModel.from_pretrained(load_name, cache_dir=os.getenv('CACHE_DIR')).to(config.device)
-        processor = AutoProcessor.from_pretrained(
-            load_name,
-            cache_dir=os.getenv('CACHE_DIR'),
-            device_map=config.device
-        )
-    elif 'wav2vec2' in load_name:
-        # Load the Wav2Vec2 model and processor
-        model = Wav2Vec2Model.from_pretrained(load_name, cache_dir=os.getenv('CACHE_DIR')).to(config.device)
-        processor = AutoProcessor.from_pretrained(
-            load_name,
-            cache_dir=os.getenv('CACHE_DIR'),
-            device_map=config.device
-        )
-    elif 'hubert' in load_name:
-        # Load the HuBERT model and processor
-        model = HubertModel.from_pretrained(load_name, cache_dir=os.getenv('CACHE_DIR')).to(config.device)
-        processor = AutoProcessor.from_pretrained(
-            load_name,
-            cache_dir=os.getenv('CACHE_DIR'),
-            device_map=config.device
-        )
+    model = None
+
+    if hf_model_id:
+        if 'jinaai' in hf_model_id:
+            model = AutoModel.from_pretrained(
+                hf_model_id,
+                cache_dir=os.getenv('CACHE_DIR'),
+                trust_remote_code=True
+            ).to(config.device)
+        elif 'sentence-transformers/' in hf_model_id:
+            # Load the pre-trained SentenceTransformer model and tokenizer
+            model = AutoModel.from_pretrained(hf_model_id, cache_dir=os.getenv('CACHE_DIR')).to(config.device)
+            tokenizer = AutoTokenizer.from_pretrained(
+                hf_model_id,
+                cache_dir=os.getenv('CACHE_DIR'),
+                TOKENIZERS_PARALLELISM=False
+            )
+        elif 'wav2vec2-bert' in hf_model_id:
+            # Load the Wav2Vec2-BERT model and processor
+            model = Wav2Vec2BertModel.from_pretrained(hf_model_id, cache_dir=os.getenv('CACHE_DIR')).to(config.device)
+            processor = AutoProcessor.from_pretrained(
+                hf_model_id,
+                cache_dir=os.getenv('CACHE_DIR'),
+                device_map=config.device
+            )
+        elif 'wav2vec2' in hf_model_id:
+            # Load the Wav2Vec2 model and processor
+            model = Wav2Vec2Model.from_pretrained(hf_model_id, cache_dir=os.getenv('CACHE_DIR')).to(config.device)
+            processor = AutoProcessor.from_pretrained(
+                hf_model_id,
+                cache_dir=os.getenv('CACHE_DIR'),
+                device_map=config.device
+            )
+        elif 'hubert' in hf_model_id:
+            # Load the HuBERT model and processor
+            model = HubertModel.from_pretrained(hf_model_id, cache_dir=os.getenv('CACHE_DIR')).to(config.device)
+            processor = AutoProcessor.from_pretrained(
+                hf_model_id,
+                cache_dir=os.getenv('CACHE_DIR'),
+                device_map=config.device
+            )
+        else:
+            raise ValueError('Not implemented yet. Please provide a valid model id.')
     else:
-        # Load the Whisper model and processor
+        # Load the WhiSPA model and processor
         model = WhiSPAModel(config).to(config.device)
         processor = WhisperProcessor.from_pretrained(
             config.whisper_model_id,
             cache_dir=os.getenv('CACHE_DIR'),
             device_map=config.device
         )
+
+        print('Instantiating WhiSPA with loaded state dict...')
+        state_dict = torch.load(os.path.join(os.getenv('CHECKPOINT_DIR'), load_name, 'best.pth'))
+        try:
+            model.load_state_dict(state_dict)
+        except:
+            state_dict = {k.replace('module.', ''): v for k, v in state_dict.items()}
+            model.load_state_dict(state_dict)
 
     if config.device == 'cuda':
         if torch.cuda.is_available():
@@ -136,15 +159,6 @@ def load_models(config, load_name):
         else:
             print("CUDA is not available. Only CPU will be used.\n")
         model = torch.nn.DataParallel(model, device_ids=gpus)
-
-    if not ('jinaai/' in load_name or 'sentence-transformers/' in load_name or 'facebook/' in load_name or 'hf-audio/' in load_name):
-        print('Instantiating WhiSPA with loaded state dict...')
-        state_dict = torch.load(os.path.join(os.getenv('CHECKPOINT_DIR'), load_name, 'best.pth'))
-        try:
-            model.load_state_dict(state_dict)
-        except:
-            state_dict = {k.replace('module.', ''): v for k, v in state_dict.items()}
-            model.load_state_dict(state_dict)
 
     return processor, tokenizer, model
 
@@ -260,17 +274,9 @@ def inference(
 def main():
     args = load_args()
 
-    print('Preparing Model Configuration...')
-    if 'sentence-transformers/' in args.load_name or 'facebook/' in args.load_name or 'hf-audio/' in args.load_name:
-        print(f'\tInitializing Pretrained Model: `{args.load_name}`...')
-        config = WhiSPAConfig(
-            batch_size=args.batch_size,
-            num_workers=args.num_workers,
-            shuffle=not args.no_shuffle,
-            device=args.device
-        )
-    else:
-        print('\tInitializing WhiSPA Config from Load File...')
+    logging.info('Preparing Model Configuration...')
+    if args.load_name:
+        logging.info('\tInitializing WhiSPA Config from Load File...')
         config = torch.load(os.path.join(os.getenv('CHECKPOINT_DIR'), args.load_name, 'config.pth'))
         config.shuffle = not args.no_shuffle
         if config.batch_size != args.batch_size:
@@ -279,10 +285,20 @@ def main():
             config.num_workers = args.num_workers
         if config.device != args.device:
             config.device = args.device
-        print(config)
+        logging.info(config)
+    elif args.hf_model_id:
+        logging.info(f'\tInitializing Pretrained Model: `{args.hf_model_id}` from HuggingFace...')
+        config = WhiSPAConfig(
+            batch_size=args.batch_size,
+            num_workers=args.num_workers,
+            shuffle=not args.no_shuffle,
+            device=args.device
+        )
+    else:
+        raise ValueError('Please provide either a `load_name` or `hf_model_id` argument.')
 
     print('\nLoading and Initializing Models with Config...')
-    processor, tokenizer, model = load_models(config, args.load_name)
+    processor, tokenizer, model = load_models(config, args.load_name, args.hf_model_id)
 
     print('\nPreprocessing AudioDataset...')
     dataset = AudioDataset(config, [processor], mode='inference')
