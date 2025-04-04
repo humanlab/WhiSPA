@@ -36,9 +36,15 @@ def load_args():
     parser = argparse.ArgumentParser(description='Script to inference WhiSPA model (Generates Embeddings)')
     parser.add_argument(
         '--load_name',
-        required=True,
+        default='',
         type=str,
-        help='Specify the filename to the model directory. It will use `config.pth` and `best.pth` saved in: <CHECKPOINT_DIR>/<MODEL_NAME>/`\nOr specify the HuggingFace model id to use. `Ex. sentence-transformers/all-mpnet-base-v2`'
+        help='Specify the filename to the model directory. It will use `config.pth` and `best.pth` saved in: <CHECKPOINT_DIR>/<MODEL_NAME>/`'
+    )
+    parser.add_argument(
+        '--hf_model_id',
+        default='',
+        type=str,
+        help='Specify the HuggingFace model id to use. `Ex. jinaai/jina-embeddings-v3`'
     )
     parser.add_argument(
         "--batch_size",
