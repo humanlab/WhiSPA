@@ -11,12 +11,13 @@ load_dotenv()
 
 class AudioDataset(torch.utils.data.Dataset):
     
-    def __init__(self, config, processors, mode='train'):
+    def __init__(self, config, processors, dtype=torch.bfloat16, mode='train'):
         self.config = config
+        self.processors = processors
+        self.dtype = dtype
+        self.mode = mode
         self.hitop_segments_df = pd.read_csv(f'{os.getenv("HITOP_DATA_DIR")}/whispa_dataset.csv')
         self.wtc_segments_df = pd.read_csv(f'{os.getenv("WTC_DATA_DIR")}/whispa_dataset.csv')
-        self.processors = processors
-        self.mode = mode
 
         if mode == 'train' and self.config.n_new_dims:
             # Load SBERT Mean and Standard Dimensional Distribution
@@ -59,11 +60,12 @@ class AudioDataset(torch.utils.data.Dataset):
         
         if self.mode == 'train':
             return (
-                audio_inputs[0],
+                audio_inputs[0].to(self.dtype) if audio_inputs[0] is not None else None,
                 df.iloc[i]['message'],
-                audio_inputs[1],
-                torch.from_numpy(df.iloc[i][4:].to_numpy(dtype=np.float32)).unsqueeze(0) if self.config.n_new_dims else None
+                audio_inputs[1].to(self.dtype) if audio_inputs[1] is not None else None,
+                torch.from_numpy(df.iloc[i][4:].to_numpy(dtype=np.float32)).unsqueeze(0).to(self.dtype) if self.config.n_new_dims else None
             )
+        
         elif self.mode == 'inference':
             return (
                 dataset_name,

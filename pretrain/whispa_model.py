@@ -30,18 +30,21 @@ class WhiSPAModel(
         self.whisper_model = WhisperModel.from_pretrained(
             config.whisper_model_id,
             cache_dir=os.getenv('CACHE_DIR'),
-        ).to(config.device)
+        ).to(dtype=config.dtype, device=config.device)
 
         self.linear = torch.nn.Linear(
             in_features=self.config.hidden_size,
             out_features=self.config.hidden_size,
             bias=True
-        ).to(config.device)
+        ).to(dtype=config.dtype, device=config.device)
         self.activation = torch.nn.Tanh().to(config.device)
 
         if config.n_new_dims:
             # Learnable Projection Matrix (emb_dims x new_dims)
-            self.projection = torch.nn.Linear(config.emb_dims, config.n_new_dims).to(config.device)
+            self.projection = torch.nn.Linear(
+                config.emb_dims,
+                config.n_new_dims
+            ).to(dtype=config.dtype, device=config.device)
 
 
     def forward(self, audio_inputs, text_input_ids, text_attention_mask):

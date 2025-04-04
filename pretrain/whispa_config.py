@@ -9,7 +9,8 @@ class WhiSPAConfig():
         whisper_model_id: str = 'openai/whisper-medium',
         pooling_mode: str = 'mean',
         n_new_dims: int = 0,
-        loss: str = 'NCE',
+        loss: str = 'DWD',
+        dtype: str = torch.bfloat16,
         alpha: float = 0.5,
         beta: float = 0.5,
         rho: float = 0.0,
@@ -33,6 +34,7 @@ class WhiSPAConfig():
         self.pooling_mode = pooling_mode
         self.n_new_dims = n_new_dims
         self.loss = loss
+        self.dtype = dtype
         self.alpha = alpha
         self.beta = beta
         self.rho = rho

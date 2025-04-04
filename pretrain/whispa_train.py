@@ -24,16 +24,15 @@ from transformers import (
     AutoProcessor,
     AutoModel,
 )
+from accelerate import Accelerator
 import wandb
 from tqdm import tqdm
-from matplotlib import pyplot as plt
 
 from pretrain.whispa_config import WhiSPAConfig
 from pretrain.whispa_model import WhiSPAModel
 from pretrain.whispa_data import AudioDataset, collate_train
 from pretrain.whispa_utils import (
-    mean_pooling,
-    dwd_loss,
+    dwd_loss
 )
 
 
@@ -142,6 +141,17 @@ def load_args():
         help='Specify the type of loss criteria during training. `Default value set to DWD`'
     )
     parser.add_argument(
+        "--dtype",
+        default='BF16',
+        choices=[
+            'FP32',
+            'FP16',
+            'BF16'
+        ],
+        type=str,
+        help="The data type for the model. Default is `BF16`"
+    )
+    parser.add_argument(
         "--alpha",
         default=0.5,
         type=float,
@@ -174,16 +184,13 @@ def load_args():
 
 
 def load_models(config, load_name):
-    # Load the WhiSPA and Whisper processor
-    whisper_processor = AutoProcessor.from_pretrained(
-        config.whisper_model_id,
-        cache_dir=os.getenv('CACHE_DIR'),
-        device_map=config.device
-    )
-    whispa = WhiSPAModel(config).to(config.device)
+    if config.device == 'cuda':
+        accelerator = Accelerator()
+        config.device = accelerator.device
+        logging.info(f"\tAcclerator using device: {config.device}")
 
-    # Load the pre-trained SBERT model
-    sbert = AutoModel.from_pretrained(
+    # Load the pre-trained JINA model
+    jina = AutoModel.from_pretrained(
         config.linguistic_teacher_id,
         cache_dir=os.getenv('CACHE_DIR'),
         trust_remote_code=True
@@ -200,33 +207,27 @@ def load_models(config, load_name):
         cache_dir=os.getenv('CACHE_DIR')
     ).to(config.device)
 
-    if config.device == 'cuda':
-        if torch.cuda.is_available():
-            gpus = list(range(torch.cuda.device_count()))
-            logging.info(f"\nAvailable GPU IDs: {gpus}")
-            for i in gpus:
-                logging.info(f"\tGPU {i}: {torch.cuda.get_device_name(i)}")
-            logging.info('\n')
-            whispa = torch.nn.DataParallel(whispa, device_ids=gpus)
-            sbert = torch.nn.DataParallel(sbert, device_ids=gpus)
-            hubert = torch.nn.DataParallel(hubert, device_ids=gpus)
-        else:
-            logging.info("CUDA is not available. Only CPU will be used.\n")
+    # Load the WhiSPA and Whisper processor
+    whisper_processor = AutoProcessor.from_pretrained(
+        config.whisper_model_id,
+        cache_dir=os.getenv('CACHE_DIR'),
+        device_map=config.device
+    )
+    whispa = WhiSPAModel(config).to(config.device)
 
     if load_name:
         logging.info('Instantiating WhiSPA with loaded state dict...')
         state_dict = torch.load(os.path.join(os.getenv('CHECKPOINT_DIR'), load_name, 'best.pth'))
-        try:
-            whispa.load_state_dict(state_dict)
-        except:
-            state_dict = {k.replace('module.', ''): v for k, v in state_dict.items()}
-            whispa.load_state_dict(state_dict)
+        whispa.load_state_dict(state_dict)
 
-    return whispa, sbert, hubert, whisper_processor, hubert_processor
+    # Compile the model for better performance
+    whispa = torch.compile(whispa, mode='reduce-overhead', fullgraph=True)
+
+    return whispa, jina, hubert, whisper_processor, hubert_processor, accelerator
 
 
 def load_dataset(config, whisper_processor, hubert_processor):
-    dataset = AudioDataset(config, [whisper_processor, hubert_processor],mode='train')
+    dataset = AudioDataset(config, [whisper_processor, hubert_processor], dtype=config.dtype, mode='train')
 
     # Calculate lengths for the train/val split (80:20)
     total_size = len(dataset)
@@ -242,24 +243,26 @@ def load_dataset(config, whisper_processor, hubert_processor):
     return train_dataset, val_dataset
 
 
-# def plot_loss(train_loss, val_loss, save_name):
-#     plt.figure(figsize=(10, 6))
-#     plt.plot(range(1, len(train_loss) + 1), train_loss, 'b-', label='Training Loss')
-#     plt.plot(range(1, len(val_loss) + 1), val_loss, 'r-', label='Validation Loss')
-#     plt.title(f'Training vs Validation Loss Curve')
-#     plt.xlabel('Epochs')
-#     plt.ylabel('Loss')
-#     plt.legend()
-#     plt.grid(True)
-#     os.makedirs(os.path.join(BASE_DIR, 'loss'), exist_ok=True)
-#     plt.savefig(os.path.join(BASE_DIR, f'loss/{save_name}.png'), format='png')
+def save_config(save_name, config):
+    if save_name:
+        save_dir = os.path.join(os.getenv('CHECKPOINT_DIR'), save_name)
+        os.makedirs(save_dir, exist_ok=True)
+        config_path = os.path.join(save_dir, 'config.pth')
+        torch.save(config, config_path)
+        logging.info(f'\tConfiguration saved to: `{config_path}`')
+
+
+def save_model(save_name, model, accelerator, mode='last'):
+    if save_name:
+        save_path = os.path.join(os.getenv('CHECKPOINT_DIR'), save_name, f'{mode}.pth')
+        accelerator.save(model.state_dict(), save_path)
 
 
 def train(
     train_dataset,
     val_dataset,
     whispa,
-    sbert,
+    jina,
     hubert,
     whisper_tokenizer,
     config,
@@ -311,7 +314,7 @@ def train(
     elif config.loss == 'MOW':
         loss_func = None # Not yet implemented
 
-    sbert.eval()
+    jina.eval()
     train_loss = []
     val_loss = []
     best_state = None
@@ -334,8 +337,8 @@ def train(
             
             # Forward pass
             with torch.no_grad():
-                # Get SBERT's MEAN embedding
-                sbert_embs = torch.tensor(sbert.module.encode(
+                # Get JINA's MEAN embedding
+                jina_embs = torch.tensor(jina.module.encode(
                     batch['message'],
                     task='classification',
                     show_progress_bar=False,
@@ -358,7 +361,7 @@ def train(
             # Apply loss functions on embeddings
             loss = loss_func(
                 whispa_embs,
-                sbert_embs,
+                jina_embs,
                 hubert_embs,
                 psych_embs,
                 config.alpha,
@@ -394,8 +397,8 @@ def train(
                     return_tensors='pt'
                 ).to(config.device)
                 
-                # Get SBERT's MEAN embedding
-                sbert_embs = torch.tensor(sbert.module.encode(
+                # Get JINA's MEAN embedding
+                jina_embs = torch.tensor(jina.module.encode(
                     batch['message'],
                     task='classification',
                     show_progress_bar=False,
@@ -418,7 +421,7 @@ def train(
                 # Apply loss functions on embeddings
                 loss = loss_func(
                     whispa_embs,
-                    sbert_embs,
+                    jina_embs,
                     hubert_embs,
                     psych_embs,
                     config.alpha,
@@ -475,8 +478,18 @@ def train(
 
 def main():
     args = load_args()
-    if not args.save_name:
-        args.save_name = f'model_{time.strftime("%Y-%m-%d-%H-%M-%S")}'
+    if args.save_name:
+        args.save_name += f'_{time.strftime("%Y-%m-%d-%H-%M-%S")}'
+
+    if torch.cuda.is_available():
+        gpus = list(range(torch.cuda.device_count()))
+        logging.info(f"\nAvailable GPU IDs: {gpus}")
+        for i in gpus:
+            logging.info(f"\tGPU {i}: {torch.cuda.get_device_name(i)}")
+        logging.info()
+    else:
+        logging.info("CUDA is not available. Only CPU will be used.\n")
+        args.device = 'cpu'
 
     logging.info('Preparing Model Configuration...')
     if args.load_name:
@@ -506,11 +519,17 @@ def main():
         if config.device != args.device:
             config.device = args.device
     else:
+        dtype_choices = {
+            'FP32': torch.float32,
+            'FP16': torch.float16,
+            'BF16': torch.bfloat16
+        }
         config = WhiSPAConfig(
             whisper_model_id = args.whisper_model_id,
             pooling_mode = args.pooling_mode,
             n_new_dims= args.n_new_dims,
             loss = args.loss,
+            dtype = dtype_choices[args.dtype],
             alpha = args.alpha,
             beta = args.beta,
             rho = args.rho,
@@ -526,20 +545,11 @@ def main():
 
     logging.info(config)
 
-    # Save Configuration
-    if args.save_name:
-        if os.path.exists(args.save_name):
-            logging.info(f'WARNING: Overwriting existing model directory!')
-            logging.info(f'\t"{args.save_name}" already exists in "{os.getenv("CHECKPOINT_DIR")}"')
-
-        logging.info(f'\nSaving WhiSPA Config...')
-        save_dir = os.path.join(os.getenv('CHECKPOINT_DIR'), args.save_name)
-        os.makedirs(save_dir, exist_ok=True)
-        config_path = os.path.join(save_dir, 'config.pth')
-        torch.save(config, config_path)
+    logging.info(f'\nSaving WhiSPA Config...')
+    save_config(args.save_name, config)
 
     logging.info('\nLoading and Initializing Models with Config...')
-    whispa, sbert, hubert, whisper_processor, hubert_processor = load_models(config, args.load_name)
+    whispa, jina, hubert, whisper_processor, hubert_processor, accelerator = load_models(config, args.load_name)
 
     logging.info('\nPreprocessing AudioDataset...')
     train_dataset, val_dataset = load_dataset(config, whisper_processor, hubert_processor)
@@ -549,7 +559,7 @@ def main():
         train_dataset,
         val_dataset,
         whispa,
-        sbert,
+        jina,
         hubert,
         whisper_processor.tokenizer,
         config,
@@ -557,16 +567,12 @@ def main():
     )
 
     # Save Model Checkpoint
-    if args.save_name:
-        logging.info(f'\nSaving WhiSPA Model...')
-        save_dir = os.path.join(os.getenv('CHECKPOINT_DIR'), args.save_name)
-        best_path = os.path.join(save_dir, 'best.pth')
-        last_path = os.path.join(save_dir, 'last.pth')
-        torch.save(whispa.state_dict(), last_path)
-        logging.info(f'\tDone.\t`{best_path}`\n')
-        logging.info(f'\tDone.\t`{last_path}`\n')
+    logging.info(f'\nSaving WhiSPA Model...')
+    save_model(args.save_name, whispa, accelerator, mode='last')
 
     torch.cuda.empty_cache()
+    if torch.distributed.is_initialized():
+        torch.distributed.destroy_process_group()
 
 
 if __name__ == '__main__':    
