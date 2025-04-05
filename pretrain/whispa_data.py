@@ -3,7 +3,6 @@ import numpy as np
 import pandas as pd
 import torch, torchaudio
 from torch.nn.utils.rnn import pad_sequence
-import transformers
 from dotenv import load_dotenv
 
 load_dotenv()

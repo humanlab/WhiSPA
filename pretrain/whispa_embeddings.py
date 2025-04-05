@@ -1,6 +1,5 @@
 import sys, os
 
-import torch.distributed
 # Add the root directory of the project to the Python path
 BASE_DIR = os.path.join(os.path.dirname(__file__), '..')
 sys.path.append(os.path.abspath(BASE_DIR))
@@ -178,7 +177,8 @@ def inference(
     )
     
     # Handle output file and paths
-    if config.hf_model_id:
+    if '/' in save_name:
+        save_name = save_name[save_name.find('/') + 1:]
         config.emb_dims = model.config.hidden_size
 
     output_path = os.path.join(os.getenv('EMBEDDINGS_DIR'), save_name)
@@ -197,7 +197,6 @@ def inference(
     # Prepare model, and data loader with Accelerator
     if accelerator is not None:
         model, data_loader = accelerator.prepare(model, data_loader)
-
     model.eval()
     start_time = time.time()
     with torch.no_grad():
@@ -216,7 +215,7 @@ def inference(
                 sbert_embs = mean_pooling(sbert_embs, sbert_inputs['attention_mask'])
                 embs = F.normalize(sbert_embs, p=2, dim=1)
             
-            elif 'jinaai' in str(type(model)):
+            elif save_name == 'jina-embeddings-v3':
                 # Get JINA's MEAN embedding
                 jina_embs = torch.tensor(model.encode(
                     batch['message'],
@@ -283,7 +282,7 @@ def main():
         logging.info(f"\nAvailable GPU IDs: {gpus}")
         for i in gpus:
             logging.info(f"\tGPU {i}: {torch.cuda.get_device_name(i)}")
-        logging.info()
+        logging.info('\n')
     else:
         logging.info("CUDA is not available. Only CPU will be used.\n")
         args.device = 'cpu'
@@ -301,7 +300,7 @@ def main():
             config.device = args.device
         logging.info(config)
     elif args.hf_model_id:
-        save_name = args.hf_model_id[args.hf_model_id.find('/') + 1:]
+        save_name = args.hf_model_id
         logging.info(f'\tInitializing Pretrained Model: `{args.hf_model_id}` from HuggingFace...')
         config = WhiSPAConfig(
             batch_size=args.batch_size,

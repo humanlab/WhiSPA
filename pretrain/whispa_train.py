@@ -486,7 +486,7 @@ def main():
         logging.info(f"\nAvailable GPU IDs: {gpus}")
         for i in gpus:
             logging.info(f"\tGPU {i}: {torch.cuda.get_device_name(i)}")
-        logging.info()
+        logging.info('\n')
     else:
         logging.info("CUDA is not available. Only CPU will be used.\n")
         args.device = 'cpu'
