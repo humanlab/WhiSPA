@@ -6,7 +6,7 @@ sys.path.append(os.path.abspath(BASE_DIR))
 
 import logging
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format="%(asctime)s - %(levelname)s - %(message)s",
     handlers=[
         logging.StreamHandler(),
@@ -105,30 +105,55 @@ def load_models(config, load_name, hf_model_id):
                 cache_dir=os.getenv('CACHE_DIR'),
                 trust_remote_code=True
             ).to(config.device)
+
         elif 'sentence-transformers/' in hf_model_id:
             # Load the pre-trained SentenceTransformer model and tokenizer
-            model = AutoModel.from_pretrained(hf_model_id, cache_dir=os.getenv('CACHE_DIR')).to(config.device)
+            model = AutoModel.from_pretrained(
+                hf_model_id,
+                cache_dir=os.getenv('CACHE_DIR')
+            ).to(config.device)
             tokenizer = AutoTokenizer.from_pretrained(
                 hf_model_id,
                 cache_dir=os.getenv('CACHE_DIR'),
                 TOKENIZERS_PARALLELISM=False
             )
+
+        elif 'whisper' in hf_model_id:
+            # Load the Whisper encoder model and processor
+            model = AutoModel.from_pretrained(
+                hf_model_id,
+                cache_dir=os.getenv('CACHE_DIR')
+            ).encoder.to(config.device)
+            processor = AutoProcessor.from_pretrained(
+                hf_model_id,
+                cache_dir=os.getenv('CACHE_DIR'),
+                device_map=config.device
+            )
+
         elif 'wav2vec2-bert' in hf_model_id:
             # Load the Wav2Vec2-BERT model and processor
-            model = Wav2Vec2BertModel.from_pretrained(hf_model_id, cache_dir=os.getenv('CACHE_DIR')).to(config.device)
+            model = Wav2Vec2BertModel.from_pretrained(
+                hf_model_id,
+                cache_dir=os.getenv('CACHE_DIR')
+            ).to(config.device)
             processor = AutoProcessor.from_pretrained(
                 hf_model_id,
                 cache_dir=os.getenv('CACHE_DIR'),
                 device_map=config.device
             )
+
         elif 'wav2vec2' in hf_model_id:
             # Load the Wav2Vec2 model and processor
-            model = Wav2Vec2Model.from_pretrained(hf_model_id, cache_dir=os.getenv('CACHE_DIR')).to(config.device)
+            model = Wav2Vec2Model.from_pretrained(
+                hf_model_id,
+                cache_dir=os.getenv('CACHE_DIR')
+            ).to(config.device)
             processor = AutoProcessor.from_pretrained(
                 hf_model_id,
                 cache_dir=os.getenv('CACHE_DIR'),
                 device_map=config.device
             )
+
         elif 'hubert' in hf_model_id:
             # Load the HuBERT model and processor
             model = HubertModel.from_pretrained(hf_model_id, cache_dir=os.getenv('CACHE_DIR')).to(config.device)
@@ -154,6 +179,7 @@ def load_models(config, load_name, hf_model_id):
     
     # Compile the model for better performance
     model = torch.compile(model, mode='reduce-overhead', fullgraph=True)
+    logging.debug(f'{type(model)}\n{model}\n')
         
     return processor, tokenizer, model, accelerator
 
@@ -185,9 +211,6 @@ def inference(
     os.makedirs(output_path, exist_ok=True)
     hitop_output_filepath = os.path.join(output_path, f'hitop_embeddings.csv')
     wtc_output_filepath = os.path.join(output_path, f'wtc_embeddings.csv')
-    assert not (os.path.exists(hitop_output_filepath) or os.path.exists(wtc_output_filepath)), (
-        f'OutputError: The output filepath(s) already exist.\n\t{hitop_output_filepath}\n\t{wtc_output_filepath}'
-    )
  
     cols = ['message_id'] + [f'f{i:04d}' for i in range(config.emb_dims + config.n_new_dims)]
     df = pd.DataFrame(columns=cols)
@@ -197,6 +220,7 @@ def inference(
     # Prepare model, and data loader with Accelerator
     if accelerator is not None:
         model, data_loader = accelerator.prepare(model, data_loader)
+
     model.eval()
     start_time = time.time()
     with torch.no_grad():
@@ -217,13 +241,19 @@ def inference(
             
             elif save_name == 'jina-embeddings-v3':
                 # Get JINA's MEAN embedding
-                jina_embs = torch.tensor(model.encode(
+                jina_embs = torch.tensor(model.module.encode(
                     batch['message'],
                     task='classification',
                     show_progress_bar=False,
                     truncate_dim=config.hidden_size
                 ), dtype=torch.float32, device=config.device)
                 embs = F.normalize(jina_embs, p=2, dim=1)
+
+            elif isinstance(model, transformers.models.whisper.modeling_whisper.WhisperEncoder):
+                # Get Whisper Encoder's MEAN embedding
+                whis_embs = model.module.encode(batch['audio_inputs'].to(config.device))
+                whis_embs = whis_embs.last_hidden_state.mean(1)
+                embs = F.normalize(whis_embs, p=2, dim=1)
             
             elif isinstance(processor, transformers.models.wav2vec2.processing_wav2vec2.Wav2Vec2Processor):
                 # Get W2V2/HuBERT's MEAN embedding

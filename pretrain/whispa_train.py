@@ -5,7 +5,7 @@ sys.path.append(os.path.abspath(BASE_DIR))
 
 import logging
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format="%(asctime)s - %(levelname)s - %(message)s",
     handlers=[
         logging.StreamHandler(),
