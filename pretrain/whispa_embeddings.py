@@ -43,6 +43,10 @@ from pretrain.whispa_model import WhiSPAModel
 from pretrain.whispa_data import AudioDataset, collate_inference
 
 
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+torch.set_float32_matmul_precision('high')
+
+
 def load_args():
     parser = argparse.ArgumentParser(description='Script to inference WhiSPA model (Generates Embeddings)')
     parser.add_argument(
@@ -96,7 +100,7 @@ def load_models(config, load_name, hf_model_id):
     if config.device == 'cuda':
         accelerator = Accelerator()
         config.device = accelerator.device
-        logging.info(f"\tAcclerator using device: {config.device}")
+        logging.info(f"  Acclerator using device: {config.device}")
 
     if hf_model_id:
         if 'jinaai/' in hf_model_id:
@@ -178,7 +182,7 @@ def load_models(config, load_name, hf_model_id):
         model.load_state_dict(state_dict)
     
     # Compile the model for better performance
-    model = torch.compile(model, mode='reduce-overhead', fullgraph=True)
+    # model = torch.compile(model, mode='reduce-overhead', fullgraph=True)
     logging.debug(f'{type(model)}\n{model}\n')
         
     return processor, tokenizer, model, accelerator
@@ -232,7 +236,7 @@ def inference(
                     padding=True,
                     truncation=True,
                     return_tensors='pt'
-                ).to(dtype=model.dtype, device=config.device)
+                ).to(model.dtype).to(config.device)
 
                 # Get SBERT's MEAN embedding
                 sbert_embs = model(**sbert_inputs).last_hidden_state
@@ -246,12 +250,12 @@ def inference(
                     task='classification',
                     show_progress_bar=False,
                     truncate_dim=config.hidden_size
-                ), dtype=torch.float32, device=config.device)
+                )).to(torch.float32).to(config.device)
                 embs = F.normalize(jina_embs, p=2, dim=1)
-
-            elif isinstance(model, transformers.models.whisper.modeling_whisper.WhisperEncoder):
+            
+            elif save_name == 'whisper-medium':
                 # Get Whisper Encoder's MEAN embedding
-                whis_embs = model.module.encode(batch['audio_inputs'].to(config.device))
+                whis_embs = model.module(batch['audio_inputs'].to(config.device))
                 whis_embs = whis_embs.last_hidden_state.mean(1)
                 embs = F.normalize(whis_embs, p=2, dim=1)
             
@@ -281,10 +285,10 @@ def inference(
                     truncation=True,
                     max_length=512,
                     return_tensors='pt'
-                ).to(dtype=model.dtype, device=config.device)
+                ).to(config.dtype).to(config.device)
 
                 # Get WhiSPA's embedding
-                whis_embs = model(
+                whis_embs = model.module(
                     batch['audio_inputs'].to(config.device),
                     outputs['input_ids'],
                     outputs['attention_mask']
@@ -309,17 +313,16 @@ def main():
 
     if torch.cuda.is_available():
         gpus = list(range(torch.cuda.device_count()))
-        logging.info(f"\nAvailable GPU IDs: {gpus}")
+        logging.info(f"Available GPU IDs: {gpus}")
         for i in gpus:
-            logging.info(f"\tGPU {i}: {torch.cuda.get_device_name(i)}")
-        logging.info('\n')
+            logging.info(f"  GPU {i}: {torch.cuda.get_device_name(i)}")
     else:
-        logging.info("CUDA is not available. Only CPU will be used.\n")
+        logging.info("CUDA is not available. Only CPU will be used.")
         args.device = 'cpu'
 
     logging.info('Preparing Model Configuration...')
     if args.load_name:
-        logging.info('\tInitializing WhiSPA Config from Load File...')
+        logging.info('  Initializing WhiSPA Config from Load File...')
         config = torch.load(os.path.join(os.getenv('CHECKPOINT_DIR'), args.load_name, 'config.pth'))
         config.shuffle = not args.no_shuffle
         if config.batch_size != args.batch_size:
@@ -331,7 +334,7 @@ def main():
         logging.info(config)
     elif args.hf_model_id:
         save_name = args.hf_model_id
-        logging.info(f'\tInitializing Pretrained Model: `{args.hf_model_id}` from HuggingFace...')
+        logging.info(f'  Initializing Pretrained Model: `{args.hf_model_id}` from HuggingFace...')
         config = WhiSPAConfig(
             batch_size=args.batch_size,
             num_workers=args.num_workers,
@@ -341,14 +344,14 @@ def main():
     else:
         raise ValueError('Please provide either a `load_name` or `hf_model_id` argument.')
 
-    logging.info('\nLoading and Initializing Models with Config...')
+    logging.info('Loading and Initializing Models with Config...')
     processor, tokenizer, model, accelerator = load_models(config, args.load_name, args.hf_model_id)
 
-    logging.info('\nPreprocessing AudioDataset...')
+    logging.info('Preprocessing AudioDataset...')
     dataset = AudioDataset(config, [processor], dtype=model.dtype, mode='inference')
-    logging.info(f'\tTotal dataset size (N): {len(dataset)}')
+    logging.info(f'  Total dataset size (N): {len(dataset)}')
 
-    logging.info('\nStarting Inference...')
+    logging.info('Starting Inference...')
     inference(
         dataset,
         processor,

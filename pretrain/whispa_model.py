@@ -55,14 +55,14 @@ class WhiSPAModel(
         ).last_hidden_state
         
         embs = self.pooler(embs, text_attention_mask)
-        embs = self.linear(embs)
+        embs = self.linear(embs.to(self.config.dtype))
         embs = self.activation(embs)
 
         if self.config.n_new_dims:
             pysch_embs = self.activation(self.projection(embs))
             embs = torch.cat([embs, pysch_embs], dim=1)
         
-        return embs
+        return embs.to(torch.float32)
         
 
 #     def expand_model(self):

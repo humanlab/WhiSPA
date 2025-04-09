@@ -7,7 +7,11 @@ class WhiSPAConfig():
     def __init__(
         self,
         whisper_model_id: str = 'openai/whisper-medium',
+        linguistic_teacher_id: str = 'jina-embeddings-v3',
+        acoustic_teacher_id: str = 'hubert-large-ls960-ft',
+        use_teacher_cache: bool = False,
         pooling_mode: str = 'mean',
+        hidden_size: int = 1024,
         n_new_dims: int = 0,
         loss: str = 'DWD',
         dtype: str = torch.bfloat16,
@@ -26,12 +30,13 @@ class WhiSPAConfig():
     ):
         # Model IDs
         self.whisper_model_id = whisper_model_id
-        self.linguistic_teacher_id = 'jinaai/jina-embeddings-v3'
-        self.acoustic_teacher_id = 'facebook/hubert-large-ls960-ft'
+        self.linguistic_teacher_id = linguistic_teacher_id
+        self.acoustic_teacher_id = acoustic_teacher_id
+        self.use_teacher_cache = use_teacher_cache
                 
         # Model hyperparameters
-        self.hidden_size = 1024
         self.pooling_mode = pooling_mode
+        self.hidden_size = hidden_size
         self.n_new_dims = n_new_dims
         self.loss = loss
         self.dtype = dtype

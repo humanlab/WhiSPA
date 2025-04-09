@@ -14,21 +14,21 @@ def last_pooling(embeddings, attention_mask):
 
 
 # Cosine Similarity Loss
-def cs_loss(whis_embs, sbert_embs):
-    # z_audio = F.normalize(whis_embs, p=2, dim=1)
-    # z_text = F.normalize(sbert_embs, p=2, dim=1)
+def cs_loss(audio_embs, text_embs):
+    # z_audio = F.normalize(audio_embs, p=2, dim=1)
+    # z_text = F.normalize(text_embs, p=2, dim=1)
     # return 1 - (z_audio * z_text).sum(dim=-1).mean()
     # Yields exactly the same result as torch.cosine_similarity()
-    return 1 - torch.cosine_similarity(whis_embs, sbert_embs, dim=-1).mean()
+    return 1 - torch.cosine_similarity(audio_embs, text_embs, dim=-1).mean()
 
 
 # Cosine Similarity Contrastive Learning Loss
-def sim_clr_loss(whis_embs, sbert_embs):
-    z_audio = F.normalize(whis_embs, p=2, dim=1)
-    z_text = F.normalize(sbert_embs, p=2, dim=1)
+def sim_clr_loss(audio_embs, text_embs):
+    z_audio = F.normalize(audio_embs, p=2, dim=1)
+    z_text = F.normalize(text_embs, p=2, dim=1)
     similarity_matrix = torch.matmul(z_audio, z_text.T)
 
-    positive_mask = torch.eye(whis_embs.shape[0], dtype=torch.float32).to(whis_embs.device)
+    positive_mask = torch.eye(audio_embs.shape[0], dtype=torch.float32).to(audio_embs.device)
     positive_loss = (positive_mask * similarity_matrix).sum()
     negative_loss = ((1 - positive_mask) * F.relu(1.0 - similarity_matrix)).sum()
     return positive_loss + negative_loss
@@ -61,7 +61,7 @@ def nce_loss(z_a, z_b, tau=0.1, pooling_mode='sum'):
     return losses.sum() if pooling_mode == 'sum' else losses.mean()
 
 
-def dwd_loss(whispa_embs, sbert_embs, hubert_embs, psych_embs, alpha=0.5, beta=0.5, rho=0.0, tau=0.1):
+def dwd_loss(whispa_embs, linguistic_embs, acoustic_embs, psych_embs, alpha=0.5, beta=0.5, rho=0.0, tau=0.1):
     """
         Dual-Weighed Distillation Loss
         ------------------------------
@@ -69,12 +69,12 @@ def dwd_loss(whispa_embs, sbert_embs, hubert_embs, psych_embs, alpha=0.5, beta=0
         ------------------------------
     """
     if psych_embs:
-        return alpha * nce_loss(whispa_embs[:-10], sbert_embs, tau) + \
-            beta * nce_loss(whispa_embs[:-10], hubert_embs, tau) + \
+        return alpha * nce_loss(whispa_embs[:-10], linguistic_embs, tau) + \
+            beta * nce_loss(whispa_embs[:-10], acoustic_embs, tau) + \
             rho * nce_loss(whispa_embs[-10:], psych_embs, tau)
     else:
-        return alpha * nce_loss(whispa_embs, sbert_embs, tau) + \
-            beta * nce_loss(whispa_embs, hubert_embs, tau)
+        return alpha * nce_loss(whispa_embs, linguistic_embs, tau) + \
+            beta * nce_loss(whispa_embs, acoustic_embs, tau)
 
 
 def mow_loss():

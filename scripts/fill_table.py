@@ -86,7 +86,7 @@ def driver(connection, cursor, table_name, csv_path, no_agg):
 
         df = pd.concat([hitop_emb_df, wtc_emb_df]).reset_index(drop=True)
         for idx, row in df.iterrows():
-            print(f'[{idx + 1}/{len(df)}]\tmessage_id: {row["message_id"]}')
+            print(f'[{idx + 1}/{len(df)}]  message_id: {row["message_id"]}')
             for feat_name, value in row[1:].items():
                 values = (row['message_id'], feat_name, value, value)
                 cursor.execute(insert_query, values)
@@ -94,7 +94,7 @@ def driver(connection, cursor, table_name, csv_path, no_agg):
         df = pd.read_csv(f'{segments_path}/whispa_dataset.csv')[['user_id', 'message_id']].merge(pd.read_csv(csv_path), on='message_id', how='left')
         user_ids = np.unique(df['user_id'])
         for idx, user_id in enumerate(user_ids):
-            print(f'[{idx + 1}/{len(user_ids)}]\tuser_id: {user_id}')
+            print(f'[{idx + 1}/{len(user_ids)}]  user_id: {user_id}')
             mean_feats = df[df['user_id'] == user_id].iloc[:, 2:].mean()
 
             if group_id_dtype == 'INT':

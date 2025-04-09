@@ -93,28 +93,28 @@ def preprocess_audio(audio_path):
 def collate_train(batch):
     # Truncate HuBERT's preprocessed tensors to max length
     MAX_LENGTH = 400000
-    hubert_inputs = [h[:, :MAX_LENGTH] for _, _, h, _ in batch]
+    acoustic_inputs = [h[:, :MAX_LENGTH] for _, _, h, _ in batch]
 
     # Batch padding
     try:
-        whisper_inputs = torch.cat([w for w, _, _, _ in batch], dim=0) if isinstance(batch[0][0], torch.Tensor) else None
-        hubert_inputs = torch.cat(hubert_inputs, dim=0) if isinstance(batch[0][2], torch.Tensor) else None
+        audio_inputs = torch.cat([w for w, _, _, _ in batch], dim=0) if isinstance(batch[0][0], torch.Tensor) else None
+        acoustic_inputs = torch.cat(acoustic_inputs, dim=0) if isinstance(batch[0][2], torch.Tensor) else None
     except Exception:
-        whisper_inputs = pad_sequence(
+        audio_inputs = pad_sequence(
             [w.squeeze(0) for w, _, _, _ in batch],
             batch_first=True,
             padding_value=0.0
         )
-        hubert_inputs = pad_sequence(
-            [h.squeeze(0) for h in hubert_inputs],
+        acoustic_inputs = pad_sequence(
+            [h.squeeze(0) for h in acoustic_inputs],
             batch_first=True,
             padding_value=0.0
         )
     
     return {
-        'whisper_inputs': whisper_inputs,
+        'audio_inputs': audio_inputs,
         'message': [m for _, m, _, _  in batch],
-        'hubert_inputs': hubert_inputs,
+        'acoustic_inputs': acoustic_inputs,
         'psych_emb': torch.cat([o for _, _, _, o in batch], dim=0) if isinstance(batch[0][-1], torch.Tensor) else None
     }
 
