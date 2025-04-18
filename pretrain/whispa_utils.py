@@ -68,7 +68,7 @@ def dwd_loss(whispa_embs, linguistic_embs, acoustic_embs, psych_embs, alpha=0.5,
         L_d = α * L + β * L + p * L
         ------------------------------
     """
-    if psych_embs:
+    if psych_embs is not None:
         return alpha * nce_loss(whispa_embs[:-10], linguistic_embs, tau) + \
             beta * nce_loss(whispa_embs[:-10], acoustic_embs, tau) + \
             rho * nce_loss(whispa_embs[-10:], psych_embs, tau)

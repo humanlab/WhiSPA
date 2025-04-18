@@ -42,7 +42,7 @@ class WhiSPAModel(
         if config.n_new_dims:
             # Learnable Projection Matrix (emb_dims x new_dims)
             self.projection = torch.nn.Linear(
-                config.emb_dims,
+                config.hidden_size,
                 config.n_new_dims
             ).to(dtype=config.dtype, device=config.device)
 

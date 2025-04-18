@@ -215,7 +215,7 @@ def load_models(config, load_name):
     if config.device == 'cuda':
         accelerator = Accelerator(kwargs_handlers=[DistributedDataParallelKwargs(find_unused_parameters=True)])
         config.device = accelerator.device
-        logging.info(f"  Acclerator using device: {config.device}")
+        logging.info(f"  Accelerator using device: {config.device}")
 
     if not config.use_teacher_cache:
         # Load the pre-trained linguistic teacher model
@@ -253,10 +253,14 @@ def load_models(config, load_name):
     if load_name:
         logging.info('Instantiating WhiSPA with loaded state dict...')
         state_dict = torch.load(os.path.join(os.getenv('CHECKPOINT_DIR'), load_name, 'best.pth'), map_location=config.device)
-        whispa.load_state_dict(state_dict)
+        try:
+            whispa.load_state_dict(state_dict)
+        except:
+            state_dict = {k.replace('module.', ''): v for k, v in state_dict.items()}
+            whispa.load_state_dict(state_dict)
 
-    # Compile the model for better performance
-    whispa = torch.compile(whispa, mode='reduce-overhead', fullgraph=True)
+    # # Compile the model for better performance
+    # whispa = torch.compile(whispa, mode='reduce-overhead', fullgraph=True)
 
     return (
         accelerator,
@@ -385,9 +389,16 @@ def train(
 
         # TRAINING LOOP
         for batch_idx, batch in enumerate(tqdm(train_loader, desc=f"Epoch {epoch + 1}/{config.num_epochs} - Training")):
+            # logging.info(f'audio_inputs: {batch["audio_inputs"].shape}')
+            # logging.info(f'message: {len(batch["message"])}')
+            # logging.info(f'acoustic_inputs: {batch["acoustic_inputs"].shape if isinstance(batch["acoustic_inputs"], torch.Tensor) else None}')
+            # logging.info(f'linguistic_embs: {batch["linguistic_embs"].shape if isinstance(batch["linguistic_embs"], torch.Tensor) else None}')
+            # logging.info(f'acoustic_embs: {batch["acoustic_embs"].shape if isinstance(batch["acoustic_embs"], torch.Tensor) else None}')
+            # logging.info(f'psych_embs: {batch["psych_embs"].shape if isinstance(batch["psych_embs"], torch.Tensor) else None}')
+
             if config.use_teacher_cache:
-                linguistic_embs = None
-                acoustic_embs = None
+                linguistic_embs = batch['linguistic_embs'].to(config.device)
+                acoustic_embs = batch['acoustic_embs'].to(config.device)
             else:
                 # Get linguistic teacher's MEAN embedding
                 linguistic_embs = torch.tensor(linguistic_teacher.module.encode(
@@ -403,7 +414,7 @@ def train(
                 ).last_hidden_state.mean(1).to(torch.float32)
             
             # Get psychological features
-            psych_embs = batch['psych_emb'].to(config.device) if config.n_new_dims else None
+            psych_embs = batch['psych_embs'].to(config.device) if config.n_new_dims else None
             
             # Whisper-based tokenization
             inputs = whisper_tokenizer(
@@ -452,8 +463,8 @@ def train(
         with torch.no_grad():
             for batch_idx, batch in enumerate(tqdm(val_loader, desc=f"Epoch {epoch + 1}/{config.num_epochs} - Validation")):
                 if config.use_teacher_cache:
-                    linguistic_embs = None
-                    acoustic_embs = None
+                    linguistic_embs = batch['linguistic_embs'].to(config.device)
+                    acoustic_embs = batch['acoustic_embs'].to(config.device)
                 else:
                     # Get linguistic teacher's MEAN embedding
                     linguistic_embs = torch.tensor(linguistic_teacher.module.encode(
@@ -467,7 +478,7 @@ def train(
                     acoustic_embs = acoustic_teacher(batch['acoustic_inputs'].to(config.device)).last_hidden_state.mean(1)
                 
                 # Get psychological features
-                psych_embs = batch['psych_emb'].to(config.device) if config.n_new_dims else None
+                psych_embs = batch['psych_embs'].to(config.device) if config.n_new_dims else None
 
                 # Whisper-based tokenization
                 inputs = whisper_tokenizer(
@@ -511,7 +522,7 @@ def train(
         # Log epoch information to wandb
         wandb.log({
             "epoch": epoch,
-            "epoch_elapsed_time": epoch_elapsed_time,
+            "epoch_elapsed_time": str(epoch_elapsed_time),
             "avg_train_loss": avg_train_loss,
             "avg_val_loss": avg_val_loss,
             "learning_rate": optimizer.param_groups[0]['lr'],
@@ -528,7 +539,7 @@ def train(
         logging.info(f"  Training ({config.loss}) Loss: {avg_train_loss:.4f}")
         logging.info(f"  Validation ({config.loss}) Loss: {avg_val_loss:.4f}")
         logging.info(f"  Learning Rate: {optimizer.param_groups[0]['lr']}")
-        logging.info(f"  Epoch Elapsed Time: {epoch_elapsed_time}")
+        logging.info(f"  Epoch Elapsed Time: {str(epoch_elapsed_time)}")
     
     total_elapsed_time = timedelta(seconds=time.time() - start_time)
     logging.info(f"Total Elapsed Time: {total_elapsed_time}")
@@ -552,7 +563,13 @@ def main():
     logging.info('Preparing Model Configuration...')
     if args.load_name:
         logging.info('  Initializing WhiSPA Config from Load File...')
-        config = torch.load(os.path.join(os.getenv('CHECKPOINT_DIR'), args.load_name, 'config.pth'))
+        
+        config = torch.load(os.path.join(
+            os.getenv('CHECKPOINT_DIR'),
+            args.load_name,
+            'config.pth'
+        ), weights_only=False)
+
         config.shuffle = not args.no_shuffle
         if config.use_teacher_cache != args.use_teacher_cache:
             config.use_teacher_cache = args.use_teacher_cache

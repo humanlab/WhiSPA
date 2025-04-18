@@ -77,7 +77,7 @@ def driver(connection, cursor, table_name, csv_path, no_agg):
 
 
     if no_agg:
-        segments_300 = pd.read_csv(f'{os.getenv("WHISPA_DIR")}whispa_affect_segments.csv')['message_id']
+        segments_300 = pd.read_csv(f'{os.getenv("WHISPA_DIR")}/whispa_affect_segments.csv')['message_id']
 
         wtc_emb_df = pd.read_csv(os.path.join(os.path.dirname(csv_path), 'wtc_embeddings.csv'))
         wtc_emb_df = wtc_emb_df[wtc_emb_df['message_id'].isin(segments_300)]

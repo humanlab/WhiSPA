@@ -30,7 +30,10 @@ from transformers import (
     Wav2Vec2BertModel,
     HubertModel
 )
-from accelerate import Accelerator
+from accelerate import (
+    Accelerator,
+    DistributedDataParallelKwargs
+)
 import pandas as pd
 from tqdm import tqdm
 from dotenv import load_dotenv
@@ -98,9 +101,9 @@ def load_models(config, load_name, hf_model_id):
     accelerator = None
 
     if config.device == 'cuda':
-        accelerator = Accelerator()
+        accelerator = Accelerator(kwargs_handlers=[DistributedDataParallelKwargs(find_unused_parameters=True)])
         config.device = accelerator.device
-        logging.info(f"  Acclerator using device: {config.device}")
+        logging.info(f"  Accelerator using device: {config.device}")
 
     if hf_model_id:
         if 'jinaai/' in hf_model_id:
@@ -178,8 +181,13 @@ def load_models(config, load_name, hf_model_id):
         )
 
         logging.info('Instantiating WhiSPA with loaded state dict...')
-        state_dict = torch.load(os.path.join(os.getenv('CHECKPOINT_DIR'), load_name, 'best.pth'))
-        model.load_state_dict(state_dict)
+        state_dict = torch.load(os.path.join(os.getenv('CHECKPOINT_DIR'), load_name, 'best.pth'), map_location=config.device)
+        try:
+            model.load_state_dict(state_dict)
+        except:
+            state_dict = {k.replace('module.', ''): v for k, v in state_dict.items()}
+            model.load_state_dict(state_dict)
+        
     
     # Compile the model for better performance
     # model = torch.compile(model, mode='reduce-overhead', fullgraph=True)
@@ -209,14 +217,14 @@ def inference(
     # Handle output file and paths
     if '/' in save_name:
         save_name = save_name[save_name.find('/') + 1:]
-        config.emb_dims = model.config.hidden_size
+        config.hidden_size = model.config.hidden_size
 
     output_path = os.path.join(os.getenv('EMBEDDINGS_DIR'), save_name)
     os.makedirs(output_path, exist_ok=True)
     hitop_output_filepath = os.path.join(output_path, f'hitop_embeddings.csv')
     wtc_output_filepath = os.path.join(output_path, f'wtc_embeddings.csv')
  
-    cols = ['message_id'] + [f'f{i:04d}' for i in range(config.emb_dims + config.n_new_dims)]
+    cols = ['message_id'] + [f'f{i:04d}' for i in range(config.hidden_size + config.n_new_dims)]
     df = pd.DataFrame(columns=cols)
     df.to_csv(hitop_output_filepath, index=False)
     df.to_csv(wtc_output_filepath, index=False)
@@ -236,10 +244,10 @@ def inference(
                     padding=True,
                     truncation=True,
                     return_tensors='pt'
-                ).to(model.dtype).to(config.device)
+                ).to(model.module.dtype).to(config.device)
 
                 # Get SBERT's MEAN embedding
-                sbert_embs = model(**sbert_inputs).last_hidden_state
+                sbert_embs = model.module(**sbert_inputs).last_hidden_state
                 sbert_embs = mean_pooling(sbert_embs, sbert_inputs['attention_mask'])
                 embs = F.normalize(sbert_embs, p=2, dim=1)
             
@@ -262,7 +270,7 @@ def inference(
             elif isinstance(processor, transformers.models.wav2vec2.processing_wav2vec2.Wav2Vec2Processor):
                 # Get W2V2/HuBERT's MEAN embedding
                 try:
-                    wav_embs = model(input_values=batch['audio_inputs'].to(config.device))
+                    wav_embs = model.module(input_values=batch['audio_inputs'].to(config.device))
                     wav_embs = wav_embs.last_hidden_state.mean(1)
                     embs = F.normalize(wav_embs, p=2, dim=1)
                 except Exception as e:
@@ -271,7 +279,7 @@ def inference(
             elif isinstance(processor, transformers.models.wav2vec2_bert.processing_wav2vec2_bert.Wav2Vec2BertProcessor):
                 try:
                     # Get W2V2-BERT's MEAN embedding
-                    wav_embs = model(input_features=batch['audio_inputs'].to(config.device))
+                    wav_embs = model.module(input_features=batch['audio_inputs'].to(config.device))
                     wav_embs = wav_embs.last_hidden_state.mean(1)
                     embs = F.normalize(wav_embs, p=2, dim=1)
                 except Exception as e:
@@ -292,7 +300,7 @@ def inference(
                     batch['audio_inputs'].to(config.device),
                     outputs['input_ids'],
                     outputs['attention_mask']
-                )
+                ).to(torch.float32)
                 embs = F.normalize(whis_embs, p=2, dim=1)
 
             for m_idx, message_id in enumerate(batch['message_id']):
@@ -302,6 +310,12 @@ def inference(
                     df.to_csv(hitop_output_filepath, mode='a', header=False, index=False)
                 elif batch['dataset_name'][m_idx] == 'wtc':
                     df.to_csv(wtc_output_filepath, mode='a', header=False, index=False)
+
+    # Clean the saved embedding files
+    hitop_df = pd.read_csv(hitop_output_filepath).drop_duplicates(subset=['message_id'])
+    hitop_df.to_csv(hitop_output_filepath, index=False)
+    wtc_df = pd.read_csv(wtc_output_filepath).drop_duplicates(subset=['message_id'])
+    wtc_df.to_csv(wtc_output_filepath, index=False)
 
     elapsed_time = timedelta(seconds=time.time() - start_time)
     logging.info(f"Elapsed Time: {elapsed_time}")
@@ -323,7 +337,11 @@ def main():
     logging.info('Preparing Model Configuration...')
     if args.load_name:
         logging.info('  Initializing WhiSPA Config from Load File...')
-        config = torch.load(os.path.join(os.getenv('CHECKPOINT_DIR'), args.load_name, 'config.pth'))
+        config = torch.load(os.path.join(
+            os.getenv('CHECKPOINT_DIR'), 
+            args.load_name, 
+            'config.pth'
+        ), weights_only=False)
         config.shuffle = not args.no_shuffle
         if config.batch_size != args.batch_size:
             config.batch_size = args.batch_size
@@ -348,7 +366,7 @@ def main():
     processor, tokenizer, model, accelerator = load_models(config, args.load_name, args.hf_model_id)
 
     logging.info('Preprocessing AudioDataset...')
-    dataset = AudioDataset(config, [processor], dtype=model.dtype, mode='inference')
+    dataset = AudioDataset(config, [processor], dtype=config.dtype, mode='inference')
     logging.info(f'  Total dataset size (N): {len(dataset)}')
 
     logging.info('Starting Inference...')
