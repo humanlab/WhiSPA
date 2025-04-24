@@ -65,6 +65,28 @@ class WhiSPAModel(
         return embs.to(torch.float32)
         
 
+class WhiSPAGatingNetwork(torch.nn.Module):
+    def __init__(self, dtype, device):
+        super().__init__()
+        self.dtype = dtype
+        self.device = device
+
+        self.fc1 = torch.nn.Linear(3, 8).to(dtype).to(device)
+        self.fc2 = torch.nn.Linear(8, 1).to(dtype).to(device)
+        self.relu = torch.nn.ReLU().to(device)
+        
+    def forward(self, x):
+        """
+        Gated Weight (α) via Acoustic-Linguistic Correlation Estimator
+        -----------------------------------------------------------
+        The gating network dynamically adjusts the contribution of acoustic (L_{Z,A}) and 
+        linguistic (L_{Z,L}) losses based on the aggregated statistics of each modality.
+        """
+        # Input: x [mod_sim, var_acoustic, var_linguistic]
+        x = self.relu(self.fc1(x))
+        return torch.sigmoid(self.fc2(x)).squeeze(-1)
+
+
 #     def expand_model(self):
 #         # WHISPER ENCODER EXPANSION
 #         self.whisper_model.encoder.conv1 = expand_conv1d_layer(self.whisper_model.encoder.conv1, added_out_channels=self.config.n_new_dims)

@@ -35,7 +35,7 @@ def sim_clr_loss(audio_embs, text_embs):
 
 
 # Noise Contrastive Estimation Loss
-def nce_loss(z_a, z_b, tau=0.1, pooling_mode='sum'):
+def nce_loss(z_a, z_b, 𝜏=0.1, pooling_mode='sum'):
     """
         Helpful link I used for reference:
         https://jamesmccaffrey.wordpress.com/2022/04/11/an-example-of-normalized-temperature-scaled-cross-entropy-loss/
@@ -51,7 +51,7 @@ def nce_loss(z_a, z_b, tau=0.1, pooling_mode='sum'):
     pos_pairs = torch.arange(batch_size)
     
     # Compute cosine similarity for all pairs in the batch
-    similarity_matrix = torch.matmul(combined, combined.T) / tau
+    similarity_matrix = torch.matmul(combined, combined.T) / 𝜏
     similarity_matrix = torch.exp(similarity_matrix)
     
     pos_sims = similarity_matrix[pos_pairs, pos_pairs + batch_size]
@@ -61,21 +61,54 @@ def nce_loss(z_a, z_b, tau=0.1, pooling_mode='sum'):
     return losses.sum() if pooling_mode == 'sum' else losses.mean()
 
 
-def dwd_loss(whispa_embs, linguistic_embs, acoustic_embs, psych_embs, alpha=0.5, beta=0.5, rho=0.0, tau=0.1):
+def dwd_loss(
+    gating_net,
+    whispa_embs,
+    linguistic_embs,
+    acoustic_embs,
+    psych_embs=None,
+    λ=0.1,
+    𝜏=0.1
+):
     """
-        Dual-Weighed Distillation Loss
+        Dynamically Weighted Distillation with Modality-Specific Gates
         ------------------------------
-        L_d = α * L + β * L + p * L
+        L_DWD = α⋅Contrastive(Z, A) + (1−α)⋅Contrastive(Z, L) + λ⋅OrthoPenalty(A, L)
+        α: Gated weight from acoustic-textual correlation estimator
+        OrthoPenalty: Penalizes redundancy between A (acoustic) and L (linguistic) subspaces
         ------------------------------
     """
-    if psych_embs is not None:
-        return alpha * nce_loss(whispa_embs[:-10], linguistic_embs, tau) + \
-            beta * nce_loss(whispa_embs[:-10], acoustic_embs, tau) + \
-            rho * nce_loss(whispa_embs[-10:], psych_embs, tau)
-    else:
-        return alpha * nce_loss(whispa_embs, linguistic_embs, tau) + \
-            beta * nce_loss(whispa_embs, acoustic_embs, tau)
+    # Normalize all embeddings
+    Z = F.normalize(whispa_embs, dim=-1)
+    A = F.normalize(acoustic_embs, dim=-1)
+    L = F.normalize(linguistic_embs, dim=-1)
 
+    if psych_embs is None:
+        contrastive_z_a = nce_loss(Z, A, 𝜏)
+        contrastive_z_l = nce_loss(Z, L, 𝜏)
+        ortho = torch.norm(A.T @ L, p='fro')**2
+
+        # Compute gating network inputs
+        with torch.no_grad():
+            mod_sim = F.cosine_similarity(A, L).mean()
+            var_acoustic = torch.var(A)
+            var_linguistic = torch.var(L)
+        
+        gate_inputs = torch.tensor(
+            [mod_sim, var_acoustic, var_linguistic],
+            dtype=gating_net.module.dtype if isinstance(gating_net, torch.nn.parallel.DistributedDataParallel) \
+                else gating_net.dtype,
+            device=gating_net.module.device if isinstance(gating_net, torch.nn.parallel.DistributedDataParallel) \
+                else gating_net.device
+        ).unsqueeze(0)
+        α = gating_net(gate_inputs)
+
+        # Final loss
+        total_loss = (α * contrastive_z_a + (1-α) * contrastive_z_l + λ * ortho)
+        return total_loss, α, contrastive_z_a, contrastive_z_l, ortho
+    else:
+        raise Exception('Not Implemented!')
+        
 
 def mow_loss():
     pass

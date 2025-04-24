@@ -32,7 +32,7 @@ import wandb
 from tqdm import tqdm
 
 from pretrain.whispa_config import WhiSPAConfig
-from pretrain.whispa_model import WhiSPAModel
+from pretrain.whispa_model import WhiSPAModel, WhiSPAGatingNetwork
 from pretrain.whispa_data import AudioDataset, collate_train
 from pretrain.whispa_utils import (
     dwd_loss
@@ -177,22 +177,10 @@ def load_args():
         help="The data type for the model. Default is `BF16`"
     )
     parser.add_argument(
-        "--alpha",
-        default=0.5,
+        "--penalty_weight",
+        default=0.1,
         type=float,
-        help="The alpha value for the multiweighted objective dual loss function. `Default value set to 0.5`"
-    )
-    parser.add_argument(
-        "--beta",
-        default=0.5,
-        type=float,
-        help="The beta value for the multiweighted objective dual loss function. `Default value set to 0.5`"
-    )
-    parser.add_argument(
-        "--rho",
-        default=0.0,
-        type=float,
-        help="The rho value for the multiweighted objective dual loss function. `Default value set to 0.0`"
+        help="The penalty weight for the dynamically weighted distillation loss function. `Default value set to 0.1`"
     )
     parser.add_argument(
         "--tau",
@@ -250,14 +238,27 @@ def load_models(config, load_name):
     )
     whispa = WhiSPAModel(config)
 
+    # Load WhiSPA's GatingNetwork
+    gating_net = WhiSPAGatingNetwork(config.dtype, config.device)
+
     if load_name:
-        logging.info('Instantiating WhiSPA with loaded state dict...')
-        state_dict = torch.load(os.path.join(os.getenv('CHECKPOINT_DIR'), load_name, 'best.pth'), map_location=config.device)
+        logging.info('Instantiating WhiSPA and its GatingNet with loaded state dict...')
+        
+        # Load WhiSPA parameters
+        whispa_state_dict = torch.load(os.path.join(os.getenv('CHECKPOINT_DIR'), load_name, 'best.pth'), map_location=config.device)
         try:
-            whispa.load_state_dict(state_dict)
+            whispa.load_state_dict(whispa_state_dict)
         except:
-            state_dict = {k.replace('module.', ''): v for k, v in state_dict.items()}
-            whispa.load_state_dict(state_dict)
+            whispa_state_dict = {k.replace('module.', ''): v for k, v in whispa_state_dict.items()}
+            whispa.load_state_dict(whispa_state_dict)
+
+        # Load GatingNet parameters 
+        gating_state_dict = torch.load(os.path.join(os.getenv('CHECKPOINT_DIR'), load_name, 'gate.pth'), map_location=config.device)
+        try:
+            gating_net.load_state_dict(gating_state_dict)
+        except:
+            gating_state_dict = {k.replace('module.', ''): v for k, v in gating_state_dict.items()}
+            gating_net.load_state_dict(gating_state_dict)
 
     # # Compile the model for better performance
     # whispa = torch.compile(whispa, mode='reduce-overhead', fullgraph=True)
@@ -266,6 +267,7 @@ def load_models(config, load_name):
         accelerator,
         whispa,
         processor,
+        gating_net,
         linguistic_teacher,
         acoustic_teacher,
         acoustic_processor
@@ -298,16 +300,18 @@ def save_config(save_name, config):
         logging.info(f'  Configuration saved to: `{config_path}`')
 
 
-def save_model(save_name, model, accelerator, mode='last'):
+def save_model(save_name, whispa, gating_net, accelerator, mode='last'):
     if save_name:
-        save_path = os.path.join(os.getenv('CHECKPOINT_DIR'), save_name, f'{mode}.pth')
-        accelerator.save(model.state_dict(), save_path)
+        save_dir = os.path.join(os.getenv('CHECKPOINT_DIR'), save_name)
+        accelerator.save(whispa.state_dict(), os.path.join(save_dir, f'{mode}.pth'))
+        accelerator.save(gating_net.state_dict(), os.path.join(save_dir, 'gate.pth'))
 
 
 def train(
     accelerator,
     whispa,
     whisper_tokenizer,
+    gating_net,
     linguistic_teacher,
     acoustic_teacher,
     train_dataset,
@@ -362,9 +366,10 @@ def train(
         loss_func = None # Not yet implemented
 
     # Prepare model(s), optimizer, and data loaders with Accelerator
-    whispa, whisper_tokenizer, optimizer, train_loader, val_loader = accelerator.prepare(
+    whispa, whisper_tokenizer, gating_net, optimizer, train_loader, val_loader = accelerator.prepare(
         whispa,
         whisper_tokenizer,
+        gating_net,
         optimizer,
         train_loader,
         val_loader
@@ -433,18 +438,30 @@ def train(
             )
 
             # Apply loss functions on embeddings
-            loss = loss_func(
+            loss, α, val_nce_acoustic, val_nce_linguistic, ortho = loss_func(
+                gating_net,
                 whispa_embs,
                 linguistic_embs,
                 acoustic_embs,
                 psych_embs,
-                config.alpha,
-                config.beta,
-                config.rho,
-                config.tau,
+                λ=config.penalty_weight,
+                𝜏=config.tau,
             )
             epoch_train_loss += loss.item()
-            wandb.log({"train_loss": loss.item()})
+            logging.info(f"  Training Loss: {loss.item():.4f}")
+            logging.info(f"  Gating Net α: {α.item():.4f}")
+            logging.info(f"  Contrastive Loss (Z, A): {val_nce_acoustic.item():.4f}")
+            logging.info(f"  Contrastive Loss (Z, L): {val_nce_linguistic.item():.4f}")
+            logging.info(f"  Orthogonal Loss (A, L): {ortho.item():.4f}")
+
+            # Log training information to wandb
+            wandb.log({
+                "train_loss": loss.item(),
+                "train_alpha": α.item(),
+                "train_val_nce_acoustic": val_nce_acoustic.item(),
+                "train_val_nce_linguistic": val_nce_linguistic.item(),
+                "train_ortho": ortho.item(),
+            })
 
             # Backward-pass
             accelerator.backward(loss)
@@ -497,18 +514,25 @@ def train(
                 )
 
                 # Apply loss functions on embeddings
-                loss = loss_func(
+                loss, α, val_nce_acoustic, val_nce_linguistic, ortho = loss_func(
+                    gating_net,
                     whispa_embs,
                     linguistic_embs,
                     acoustic_embs,
                     psych_embs,
-                    config.alpha,
-                    config.beta,
-                    config.rho,
-                    config.tau,
+                    λ=config.penalty_weight,
+                    𝜏=config.tau,
                 )
                 epoch_val_loss += loss.item()
-                wandb.log({"val_loss": loss.item()})
+
+                # Log validation information to wandb
+                wandb.log({
+                    "val_loss": loss.item(),
+                    "val_alpha": α.item(),
+                    "val_nce_acoustic": val_nce_acoustic.item(),
+                    "val_val_nce_linguistic": val_nce_linguistic.item(),
+                    "val_ortho": ortho.item(),
+                })
         
         # Adjust the learning rate based on validation loss
         scheduler.step(epoch_val_loss)
@@ -529,10 +553,10 @@ def train(
         })
 
         # Save the best and last model
-        save_model(save_name, whispa, accelerator, mode='last')
+        save_model(save_name, whispa, gating_net, accelerator, mode='last')
         if avg_val_loss < best_val_loss:
             best_val_loss = avg_val_loss
-            save_model(save_name, whispa, accelerator, mode='best')
+            save_model(save_name, whispa, gating_net, accelerator, mode='best')
 
         # Log epoch information to console
         logging.info(f"Epoch {epoch + 1}/{config.num_epochs}")
@@ -556,6 +580,9 @@ def main():
         logging.info(f"Available GPU IDs: {gpus}")
         for i in gpus:
             logging.info(f"  GPU {i}: {torch.cuda.get_device_name(i)}")
+
+        logging.info(f"Setting CUDA device to LOCAL_RANK: [{os.environ['LOCAL_RANK']}]")
+        torch.cuda.set_device(int(os.environ["LOCAL_RANK"]))
     else:
         logging.info("CUDA is not available. Only CPU will be used.")
         args.device = 'cpu'
@@ -575,12 +602,8 @@ def main():
             config.use_teacher_cache = args.use_teacher_cache
         if config.loss != args.loss:
             config.loss = args.loss
-        if config.alpha != args.alpha:
-            config.alpha = args.alpha
-        if config.beta != args.beta:
-            config.beta = args.beta
-        if config.rho != args.rho:
-            config.rho = args.rho
+        if config.penalty_weight != args.penalty_weight:
+            config.penalty_weight = args.penalty_weight
         if config.tau != args.tau:
             config.tau = args.tau
         if config.batch_size != args.batch_size:
@@ -610,9 +633,7 @@ def main():
             n_new_dims= args.n_new_dims,
             loss = args.loss,
             dtype = dtype_choices[args.dtype],
-            alpha = args.alpha,
-            beta = args.beta,
-            rho = args.rho,
+            penalty_weight = args.penalty_weight,
             tau = args.tau,
             batch_size = args.batch_size,
             num_workers = args.num_workers,
@@ -629,16 +650,21 @@ def main():
     save_config(args.save_name, config)
 
     logging.info('Loading and Initializing Models with Config...')
-    accelerator, whispa, processor, linguistic_teacher, acoustic_teacher, acoustic_processor = load_models(config, args.load_name)
+    accelerator, whispa, processor, gating_net, linguistic_teacher, acoustic_teacher, acoustic_processor = load_models(config, args.load_name)
 
     logging.info('Preprocessing AudioDataset...')
     train_dataset, val_dataset = load_dataset(config, processor, acoustic_processor)
+
+    # Synchronize all processes
+    logging.info('Synchronizing all processes...')
+    torch.distributed.barrier(device_ids=[torch.cuda.current_device()])
 
     logging.info('Starting Training...')
     train(
         accelerator,
         whispa,
         processor.tokenizer,
+        gating_net,
         linguistic_teacher,
         acoustic_teacher,
         train_dataset,
@@ -649,7 +675,7 @@ def main():
 
     # Save Model Checkpoint
     logging.info(f'Saving WhiSPA Model...')
-    save_model(args.save_name, whispa, accelerator, mode='last')
+    save_model(args.save_name, whispa, gating_net, accelerator, mode='last')
 
     torch.cuda.empty_cache()
     if torch.distributed.is_initialized():

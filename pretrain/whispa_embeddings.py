@@ -44,6 +44,7 @@ from pretrain.whispa_config import WhiSPAConfig
 from pretrain.whispa_utils import mean_pooling
 from pretrain.whispa_model import WhiSPAModel
 from pretrain.whispa_data import AudioDataset, collate_inference
+from threading import Lock
 
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -307,15 +308,14 @@ def inference(
                 emb = embs[m_idx].cpu().numpy().tolist()
                 df = pd.DataFrame([[message_id] + emb], columns=cols)
                 if batch['dataset_name'][m_idx] == 'hitop':
-                    df.to_csv(hitop_output_filepath, mode='a', header=False, index=False)
+                    # Define a global lock for file writing
+                    file_write_lock = Lock()
+
+                    # Use the lock to ensure thread-safe writing
+                    with file_write_lock:
+                        df.to_csv(hitop_output_filepath, mode='a', header=False, index=False)
                 elif batch['dataset_name'][m_idx] == 'wtc':
                     df.to_csv(wtc_output_filepath, mode='a', header=False, index=False)
-
-    # Clean the saved embedding files
-    hitop_df = pd.read_csv(hitop_output_filepath).drop_duplicates(subset=['message_id'])
-    hitop_df.to_csv(hitop_output_filepath, index=False)
-    wtc_df = pd.read_csv(wtc_output_filepath).drop_duplicates(subset=['message_id'])
-    wtc_df.to_csv(wtc_output_filepath, index=False)
 
     elapsed_time = timedelta(seconds=time.time() - start_time)
     logging.info(f"Elapsed Time: {elapsed_time}")

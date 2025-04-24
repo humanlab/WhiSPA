@@ -17,7 +17,7 @@ class WhiSPAConfig():
         dtype: str = torch.bfloat16,
         alpha: float = 0.5,
         beta: float = 0.5,
-        rho: float = 0.0,
+        penalty_weight: float = 0.1,
         tau: float = 0.1,
         batch_size: int = 1,
         num_workers: int = 1,
@@ -40,9 +40,7 @@ class WhiSPAConfig():
         self.n_new_dims = n_new_dims
         self.loss = loss
         self.dtype = dtype
-        self.alpha = alpha
-        self.beta = beta
-        self.rho = rho
+        self.penalty_weight = penalty_weight
         self.tau = tau
 
         # Training parameters
