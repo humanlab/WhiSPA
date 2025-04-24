@@ -448,11 +448,11 @@ def train(
                 𝜏=config.tau,
             )
             epoch_train_loss += loss.item()
-            logging.info(f"  Training Loss: {loss.item():.4f}")
-            logging.info(f"  Gating Net α: {α.item():.4f}")
-            logging.info(f"  Contrastive Loss (Z, A): {val_nce_acoustic.item():.4f}")
-            logging.info(f"  Contrastive Loss (Z, L): {val_nce_linguistic.item():.4f}")
-            logging.info(f"  Orthogonal Loss (A, L): {ortho.item():.4f}")
+            # logging.info(f"  Training Loss: {loss.item():.4f}")
+            # logging.info(f"  Gating Net α: {α.item():.4f}")
+            # logging.info(f"  Contrastive Loss (Z, A): {val_nce_acoustic.item():.4f}")
+            # logging.info(f"  Contrastive Loss (Z, L): {val_nce_linguistic.item():.4f}")
+            # logging.info(f"  Orthogonal Loss (A, L): {ortho.item():.4f}")
 
             # Log training information to wandb
             wandb.log({
