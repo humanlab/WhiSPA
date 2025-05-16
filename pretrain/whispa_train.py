@@ -26,7 +26,8 @@ from transformers import (
 )
 from accelerate import (
     Accelerator,
-    DistributedDataParallelKwargs
+    DistributedDataParallelKwargs,
+    InitProcessGroupKwargs
 )
 import wandb
 from tqdm import tqdm
@@ -201,7 +202,10 @@ def load_models(config, load_name):
     linguistic_teacher, acoustic_teacher, acoustic_processor = None, None, None
 
     if config.device == 'cuda':
-        accelerator = Accelerator(kwargs_handlers=[DistributedDataParallelKwargs(find_unused_parameters=True)])
+        accelerator = Accelerator(kwargs_handlers=[
+            DistributedDataParallelKwargs(find_unused_parameters=True),
+            InitProcessGroupKwargs(timeout=timedelta(seconds=3600))
+        ])
         config.device = accelerator.device
         logging.info(f"  Accelerator using device: {config.device}")
 
@@ -389,8 +393,9 @@ def train(
 
     for epoch in range(config.num_epochs):
         whispa.train()
-        epoch_start_time = time.time()
+        gating_net.train()
         epoch_train_loss = 0.0
+        epoch_start_time = time.time()
 
         # TRAINING LOOP
         for batch_idx, batch in enumerate(tqdm(train_loader, desc=f"Epoch {epoch + 1}/{config.num_epochs} - Training")):
@@ -468,12 +473,14 @@ def train(
 
             # Gradient clipping
             torch.nn.utils.clip_grad_norm_(whispa.parameters(), max_norm=1.0)
+            torch.nn.utils.clip_grad_norm_(gating_net.parameters(), max_norm=1.0)
 
             # Optimizer step
             optimizer.step()
             optimizer.zero_grad()
 
         whispa.eval()
+        gating_net.eval()
         epoch_val_loss = 0.0
 
         # VALIDATION LOOP

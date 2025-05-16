@@ -32,7 +32,8 @@ from transformers import (
 )
 from accelerate import (
     Accelerator,
-    DistributedDataParallelKwargs
+    DistributedDataParallelKwargs,
+    InitProcessGroupKwargs
 )
 import pandas as pd
 from tqdm import tqdm
@@ -102,7 +103,10 @@ def load_models(config, load_name, hf_model_id):
     accelerator = None
 
     if config.device == 'cuda':
-        accelerator = Accelerator(kwargs_handlers=[DistributedDataParallelKwargs(find_unused_parameters=True)])
+        accelerator = Accelerator(kwargs_handlers=[
+            DistributedDataParallelKwargs(find_unused_parameters=True),
+            InitProcessGroupKwargs(timeout=timedelta(seconds=3600))
+        ])
         config.device = accelerator.device
         logging.info(f"  Accelerator using device: {config.device}")
 

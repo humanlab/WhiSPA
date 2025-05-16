@@ -84,8 +84,8 @@ def dwd_loss(
     L = F.normalize(linguistic_embs, dim=-1)
 
     if psych_embs is None:
-        contrastive_z_a = nce_loss(Z, A, 𝜏)
-        contrastive_z_l = nce_loss(Z, L, 𝜏)
+        acoustic_loss = nce_loss(Z, A, 𝜏)
+        linguistic_loss = nce_loss(Z, L, 𝜏)
         ortho = torch.norm(A.T @ L, p='fro')**2
 
         # Compute gating network inputs
@@ -104,8 +104,8 @@ def dwd_loss(
         α = gating_net(gate_inputs)
 
         # Final loss
-        total_loss = (α * contrastive_z_a + (1-α) * contrastive_z_l + λ * ortho)
-        return total_loss, α, contrastive_z_a, contrastive_z_l, ortho
+        total_loss = (α * acoustic_loss + (1-α) * linguistic_loss + λ * ortho)
+        return total_loss, α, acoustic_loss, linguistic_loss, ortho
     else:
         raise Exception('Not Implemented!')
         
