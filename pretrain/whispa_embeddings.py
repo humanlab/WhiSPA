@@ -41,9 +41,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from pretrain.whispa_config import WhiSPAConfig
+from pretrain.whispa_config import UniSpeechConfig
 from pretrain.whispa_utils import mean_pooling
-from pretrain.whispa_model import WhiSPAModel
+from pretrain.whispa_model import UniSpeechModel
 from pretrain.whispa_data import AudioDataset, collate_inference
 from threading import Lock
 
@@ -112,78 +112,43 @@ def load_models(config, load_name, hf_model_id):
 
     if hf_model_id:
         if 'jinaai/' in hf_model_id:
-            model = AutoModel.from_pretrained(
-                hf_model_id,
-                cache_dir=os.getenv('CACHE_DIR'),
-                trust_remote_code=True
-            ).to(config.device)
+            model = AutoModel.from_pretrained(hf_model_id, trust_remote_code=True).to(config.device)
 
         elif 'sentence-transformers/' in hf_model_id:
             # Load the pre-trained SentenceTransformer model and tokenizer
-            model = AutoModel.from_pretrained(
-                hf_model_id,
-                cache_dir=os.getenv('CACHE_DIR')
-            ).to(config.device)
-            tokenizer = AutoTokenizer.from_pretrained(
-                hf_model_id,
-                cache_dir=os.getenv('CACHE_DIR'),
-                TOKENIZERS_PARALLELISM=False
-            )
+            model = AutoModel.from_pretrained(hf_model_id).to(config.device)
+            tokenizer = AutoTokenizer.from_pretrained(hf_model_id, TOKENIZERS_PARALLELISM=False)
 
         elif 'whisper' in hf_model_id:
             # Load the Whisper encoder model and processor
             model = AutoModel.from_pretrained(
                 hf_model_id,
-                cache_dir=os.getenv('CACHE_DIR')
             ).encoder.to(config.device)
             processor = AutoProcessor.from_pretrained(
                 hf_model_id,
-                cache_dir=os.getenv('CACHE_DIR'),
                 device_map=config.device
             )
 
         elif 'wav2vec2-bert' in hf_model_id:
             # Load the Wav2Vec2-BERT model and processor
-            model = Wav2Vec2BertModel.from_pretrained(
-                hf_model_id,
-                cache_dir=os.getenv('CACHE_DIR')
-            ).to(config.device)
-            processor = AutoProcessor.from_pretrained(
-                hf_model_id,
-                cache_dir=os.getenv('CACHE_DIR'),
-                device_map=config.device
-            )
+            model = Wav2Vec2BertModel.from_pretrained(hf_model_id).to(config.device)
+            processor = AutoProcessor.from_pretrained(hf_model_id, device_map=config.device)
 
         elif 'wav2vec2' in hf_model_id:
             # Load the Wav2Vec2 model and processor
-            model = Wav2Vec2Model.from_pretrained(
-                hf_model_id,
-                cache_dir=os.getenv('CACHE_DIR')
-            ).to(config.device)
-            processor = AutoProcessor.from_pretrained(
-                hf_model_id,
-                cache_dir=os.getenv('CACHE_DIR'),
-                device_map=config.device
-            )
+            model = Wav2Vec2Model.from_pretrained(hf_model_id).to(config.device)
+            processor = AutoProcessor.from_pretrained(hf_model_id, device_map=config.device)
 
         elif 'hubert' in hf_model_id:
             # Load the HuBERT model and processor
-            model = HubertModel.from_pretrained(hf_model_id, cache_dir=os.getenv('CACHE_DIR')).to(config.device)
-            processor = AutoProcessor.from_pretrained(
-                hf_model_id,
-                cache_dir=os.getenv('CACHE_DIR'),
-                device_map=config.device
-            )
+            model = HubertModel.from_pretrained(hf_model_id).to(config.device)
+            processor = AutoProcessor.from_pretrained(hf_model_id, device_map=config.device)
         else:
             raise ValueError('Not implemented yet. Please provide a valid model id.')
     else:
         # Load the WhiSPA model and processor
-        model = WhiSPAModel(config).to(config.device)
-        processor = WhisperProcessor.from_pretrained(
-            config.whisper_model_id,
-            cache_dir=os.getenv('CACHE_DIR'),
-            device_map=config.device
-        )
+        model = UniSpeechModel(config).to(config.device)
+        processor = WhisperProcessor.from_pretrained(config.whisper_model_id, device_map=config.device)
 
         logging.info('Instantiating WhiSPA with loaded state dict...')
         state_dict = torch.load(os.path.join(os.getenv('CHECKPOINT_DIR'), load_name, 'best.pth'), map_location=config.device)
@@ -224,7 +189,7 @@ def inference(
         save_name = save_name[save_name.find('/') + 1:]
         config.hidden_size = model.config.hidden_size
 
-    output_path = os.path.join(os.getenv('EMBEDDINGS_DIR'), save_name)
+    output_path = os.path.join(os.getenv('EMBEDDING_DIR'), save_name)
     os.makedirs(output_path, exist_ok=True)
     hitop_output_filepath = os.path.join(output_path, f'hitop_embeddings.csv')
     wtc_output_filepath = os.path.join(output_path, f'wtc_embeddings.csv')
@@ -357,7 +322,7 @@ def main():
     elif args.hf_model_id:
         save_name = args.hf_model_id
         logging.info(f'  Initializing Pretrained Model: `{args.hf_model_id}` from HuggingFace...')
-        config = WhiSPAConfig(
+        config = UniSpeechConfig(
             batch_size=args.batch_size,
             num_workers=args.num_workers,
             shuffle=not args.no_shuffle,

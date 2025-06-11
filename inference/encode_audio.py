@@ -11,7 +11,7 @@ from transformers import (
     WhisperProcessor,
     WhisperForConditionalGeneration
 )
-from pretrain.whispa_model import WhiSPAModel
+from pretrain.whispa_model import UniSpeechModel
 
 from dotenv import load_dotenv
 
@@ -68,7 +68,7 @@ def load_model(model_id, device):
     whisper = WhisperForConditionalGeneration.from_pretrained(
         'openai/whisper-tiny'
     ).to(device)
-    whispa = WhiSPAModel.from_pretrained(
+    whispa = UniSpeechModel.from_pretrained(
         model_id
     ).to(device)
     return processor, whisper, whispa

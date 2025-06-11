@@ -32,8 +32,8 @@ from accelerate import (
 import wandb
 from tqdm import tqdm
 
-from pretrain.whispa_config import WhiSPAConfig
-from pretrain.whispa_model import WhiSPAModel, WhiSPAGatingNetwork
+from pretrain.whispa_config import UniSpeechConfig
+from pretrain.whispa_model import UniSpeechModel, GatingNetwork
 from pretrain.whispa_data import AudioDataset, collate_train
 from pretrain.whispa_utils import (
     dwd_loss
@@ -211,39 +211,21 @@ def load_models(config, load_name):
 
     if not config.use_teacher_cache:
         # Load the pre-trained linguistic teacher model
-        linguistic_teacher = AutoModel.from_pretrained(
-            config.linguistic_teacher_id,
-            cache_dir=os.getenv('CACHE_DIR'),
-            trust_remote_code=True
-        ).to(config.dtype).to(config.device)
+        linguistic_teacher = AutoModel.from_pretrained(config.linguistic_teacher_id, trust_remote_code=True).to(config.dtype).to(config.device)
 
         # Load the pre-trained acoustic model/processor
         if config.acoustic_teacher_id == config.whisper_model_id:
-            acoustic_teacher = AutoModel.from_pretrained(
-                config.acoustic_teacher_id,
-                cache_dir=os.getenv('CACHE_DIR')
-            ).encoder.to(config.dtype).to(config.device)
+            acoustic_teacher = AutoModel.from_pretrained(config.acoustic_teacher_id).encoder.to(config.dtype).to(config.device)
         else:
-            acoustic_teacher = AutoModel.from_pretrained(
-                config.acoustic_teacher_id,
-                cache_dir=os.getenv('CACHE_DIR')
-            ).to(config.dtype).to(config.device)
-            acoustic_processor = AutoProcessor.from_pretrained(
-                config.acoustic_teacher_id,
-                cache_dir=os.getenv('CACHE_DIR'),
-                device_map=config.device
-            )
+            acoustic_teacher = AutoModel.from_pretrained(config.acoustic_teacher_id).to(config.dtype).to(config.device)
+            acoustic_processor = AutoProcessor.from_pretrained(config.acoustic_teacher_id, device_map=config.device)
 
     # Load the WhiSPA and Whisper processor
-    processor = AutoProcessor.from_pretrained(
-        config.whisper_model_id,
-        cache_dir=os.getenv('CACHE_DIR'),
-        device_map=config.device
-    )
-    whispa = WhiSPAModel(config)
+    processor = AutoProcessor.from_pretrained(config.whisper_model_id, device_map=config.device)
+    whispa = UniSpeechModel(config)
 
     # Load WhiSPA's GatingNetwork
-    gating_net = WhiSPAGatingNetwork(config.dtype, config.device)
+    gating_net = GatingNetwork(config.dtype, config.device)
 
     if load_name:
         logging.info('Instantiating WhiSPA and its GatingNet with loaded state dict...')
@@ -631,9 +613,9 @@ def main():
             'FP16': torch.float16,
             'BF16': torch.bfloat16
         }
-        config = WhiSPAConfig(
+        config = UniSpeechConfig(
             whisper_model_id = args.whisper_model_id,
-            linguistic_teacher_id = args.linguistic_teacher_id,
+            language_model_id = args.linguistic_teacher_id,
             acoustic_teacher_id = args.acoustic_teacher_id,
             use_teacher_cache = args.use_teacher_cache,
             pooling_mode = args.pooling_mode,

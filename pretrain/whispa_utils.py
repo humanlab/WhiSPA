@@ -110,5 +110,28 @@ def dwd_loss(
         raise Exception('Not Implemented!')
         
 
-def mow_loss():
-    pass
+def spectral_recon_loss(pred, target, alpha=1.0, beta=1.0):
+    """
+    Robust spectral reconstruction loss:
+    - log-cosh frame loss
+    - spectral convergence (linear magnitude)
+
+    Args:
+        pred: [B, 80, T] - predicted log-mel
+        target: [B, 80, T] - ground truth log-mel
+
+    Returns:
+        Scalar loss
+    """
+    def log_cosh_loss(pred, target, eps=1e-6):
+        return torch.mean(torch.log(torch.cosh(pred - target + eps)))
+
+    def spectral_convergence_loss(pred_mag, target_mag):
+        return torch.norm(target_mag - pred_mag, p='fro') / (torch.norm(target_mag, p='fro') + 1e-9)
+
+    # Log-Cosh in log-mel domain
+    logcosh = log_cosh_loss(pred, target)
+    # Spectral convergence in linear scale
+    spec_conv = spectral_convergence_loss(torch.exp(pred), torch.exp(target))
+
+    return alpha * logcosh + beta * spec_conv

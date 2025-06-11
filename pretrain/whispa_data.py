@@ -22,11 +22,11 @@ class AudioDataset(torch.utils.data.Dataset):
         
         if mode == 'train':
             linguistic_embs_path = os.path.join(
-                os.getenv('EMBEDDINGS_DIR'),
+                os.getenv('EMBEDDING_DIR'),
                 config.linguistic_teacher_id[config.linguistic_teacher_id.find('/') + 1:]
             )
             acoustic_embs_path = os.path.join(
-                os.getenv('EMBEDDINGS_DIR'),
+                os.getenv('EMBEDDING_DIR'),
                 'whisper_enc_1024' if config.acoustic_teacher_id == 'openai/whisper-medium' \
                     else config.acoustic_teacher_id[config.acoustic_teacher_id.find('/') + 1:]
             )
