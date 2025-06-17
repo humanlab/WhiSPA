@@ -67,3 +67,17 @@ python inference/encode_audio.py \
 ```
 
 _\*Note: .wav, .mp3, and .m4a are known to be supported with our pipeline._
+
+## Citation
+Please cite our work if you choose to use it. We appreciate it.
+```bash
+@misc{rao2025whispasemanticallypsychologicallyaligned,
+      title={WhiSPA: Semantically and Psychologically Aligned Whisper with Self-Supervised Contrastive and Student-Teacher Learning}, 
+      author={Rajath Rao and Adithya Ganesan and Oscar Kjell and Jonah Luby and Akshay Raghavan and Scott Feltman and Whitney Ringwald and Ryan L. Boyd and Benjamin Luft and Camilo Ruggero and Neville Ryant and Roman Kotov and H. Andrew Schwartz},
+      year={2025},
+      eprint={2501.16344},
+      archivePrefix={arXiv},
+      primaryClass={eess.AS},
+      url={https://arxiv.org/abs/2501.16344}, 
+}
+```
