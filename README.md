@@ -2,7 +2,7 @@
 
 <img src="visuals/WhiSPA_Spirit_Figure.jpg" alt="WhiSPA Spirit Figure" width="50%"/>
 
-This is the code repository for the [WhiSPA paper](https://google.com).
+This is the code repository for the [WhiSPA paper]([https://google.com](https://arxiv.org/abs/2501.16344)).
 
 ## Table of Contents
 
