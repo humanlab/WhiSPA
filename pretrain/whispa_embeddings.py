@@ -41,9 +41,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from pretrain.whispa_config import UniSpeechConfig
+from pretrain.whispa_config import WhiSPAConfig
 from pretrain.whispa_utils import mean_pooling
-from pretrain.whispa_model import UniSpeechModel
+from pretrain.whispa_model import WhiSPAModel
 from pretrain.whispa_data import AudioDataset, collate_inference
 from threading import Lock
 
@@ -147,7 +147,7 @@ def load_models(config, load_name, hf_model_id):
             raise ValueError('Not implemented yet. Please provide a valid model id.')
     else:
         # Load the WhiSPA model and processor
-        model = UniSpeechModel(config).to(config.device)
+        model = WhiSPAModel(config).to(config.device)
         processor = WhisperProcessor.from_pretrained(config.whisper_model_id, device_map=config.device)
 
         logging.info('Instantiating WhiSPA with loaded state dict...')
@@ -322,7 +322,7 @@ def main():
     elif args.hf_model_id:
         save_name = args.hf_model_id
         logging.info(f'  Initializing Pretrained Model: `{args.hf_model_id}` from HuggingFace...')
-        config = UniSpeechConfig(
+        config = WhiSPAConfig(
             batch_size=args.batch_size,
             num_workers=args.num_workers,
             shuffle=not args.no_shuffle,

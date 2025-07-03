@@ -4,6 +4,7 @@
 /loss
 /notebooks
 __pycache__
+.vscode
 *.py[cod]
 *.pyo
 *.pyd

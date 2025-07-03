@@ -3,21 +3,21 @@ import json
 import torch
 
 
-class UniSpeechConfig():
+class WhiSPAConfig():
     def __init__(
         self,
         whisper_model_id: str = 'openai/whisper-medium',
         language_model_id: str = 'jinaai/jina-embeddings-v3',
         # acoustic_teacher_id: str = 'hubert-large-ls960-ft',
-        use_teacher_cache: bool = False,
+        use_teacher_cache: bool = True,
         stage: str = 'encode',
         pooling_mode: str = 'mean',
         hidden_size: int = 1024,
         n_mel_bins: int = 80,
-        max_source_positions: int = 1500,
-        spectral_decoder_n_layers: int = 6,
-        spectral_decoder_n_heads: int = 8,
-        spectral_decoder_ffn_dim: int = 4096,
+        # max_source_positions: int = 1500,
+        # spectral_decoder_n_layers: int = 6,
+        # spectral_decoder_n_heads: int = 8,
+        # spectral_decoder_ffn_dim: int = 4096,
         loss: str = 'NCE',
         dtype: torch.dtype = torch.bfloat16,
         alpha: float = 1.0, # NCE loss weight
@@ -47,10 +47,10 @@ class UniSpeechConfig():
         self.pooling_mode = pooling_mode
         self.hidden_size = hidden_size
         self.n_mel_bins = n_mel_bins
-        self.max_source_positions = max_source_positions
-        self.spectral_decoder_n_layers = spectral_decoder_n_layers
-        self.spectral_decoder_n_heads = spectral_decoder_n_heads
-        self.spectral_decoder_ffn_dim = spectral_decoder_ffn_dim
+        # self.max_source_positions = max_source_positions
+        # self.spectral_decoder_n_layers = spectral_decoder_n_layers
+        # self.spectral_decoder_n_heads = spectral_decoder_n_heads
+        # self.spectral_decoder_ffn_dim = spectral_decoder_ffn_dim
         self.loss = loss
         self.dtype = dtype
         self.alpha = alpha

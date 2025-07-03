@@ -32,8 +32,8 @@ from accelerate import (
 import wandb
 from tqdm import tqdm
 
-from pretrain.whispa_config import UniSpeechConfig
-from pretrain.whispa_model import UniSpeechModel, GatingNetwork
+from pretrain.whispa_config import WhiSPAConfig
+from pretrain.whispa_model import WhiSPAModel, WhiSPAGatingNetwork
 from pretrain.whispa_data import AudioDataset, collate_train
 from pretrain.whispa_utils import (
     dwd_loss
@@ -222,10 +222,10 @@ def load_models(config, load_name):
 
     # Load the WhiSPA and Whisper processor
     processor = AutoProcessor.from_pretrained(config.whisper_model_id, device_map=config.device)
-    whispa = UniSpeechModel(config)
+    whispa = WhiSPAModel(config)
 
     # Load WhiSPA's GatingNetwork
-    gating_net = GatingNetwork(config.dtype, config.device)
+    gating_net = WhiSPAGatingNetwork(config.dtype, config.device)
 
     if load_name:
         logging.info('Instantiating WhiSPA and its GatingNet with loaded state dict...')
@@ -613,7 +613,7 @@ def main():
             'FP16': torch.float16,
             'BF16': torch.bfloat16
         }
-        config = UniSpeechConfig(
+        config = WhiSPAConfig(
             whisper_model_id = args.whisper_model_id,
             language_model_id = args.linguistic_teacher_id,
             acoustic_teacher_id = args.acoustic_teacher_id,

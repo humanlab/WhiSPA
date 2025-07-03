@@ -18,6 +18,7 @@ python sql/sql2csv.py -c ~/.my.cnf -d HiTOP -t "feat\$cat_dd_depAnxAng_w\$wtc_se
 python sql/sql2csv.py -c ~/.my.cnf -d HiTOP -t "feat\$cat_dd_depAnxAng_w\$hitop_seg_persona\$message_id\$1gra" --csv aad_hitop.csv
 python sql/sql2csv.py -c ~/.my.cnf -d HiTOP -t "feat\$cat_dd_affInt_w\$wtc_seg_persona\$message_id\$1gra" --csv va_wtc.csv
 python sql/sql2csv.py -c ~/.my.cnf -d HiTOP -t "feat\$cat_dd_affInt_w\$hitop_seg_persona\$message_id\$1gra" --csv va_hitop.csv
+python scripts/sql2csv.py -c ~/.my.cnf -d ptsd_stop -t "temp_whisper_v6_view" --csv file2uid.csv
 """
 
 
