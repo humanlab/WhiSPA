@@ -3,8 +3,8 @@ import torch
 import torch.nn.functional as F
 from transformers import (
     WhisperForConditionalGeneration,
-    WhisperPreTrainedModel,
-    WhisperProcessor
+    WhisperProcessor,
+    GenerationConfig
 )
 from transformers.models.whisper.generation_whisper import WhisperGenerationMixin
 from transformers.models.whisper.modeling_whisper import shift_tokens_right
@@ -28,13 +28,12 @@ class WhiSPAProcessor:
 
     def __call__(self, audio_path):
         waveform = preprocess_audio(audio_path)
-        return self.processor(waveform.squeeze(), sampling_rate=16000, return_tensors='pt') # [B, T, D]
+        processed = self.processor(waveform.squeeze(), sampling_rate=16000, return_tensors='pt')
+        return processed.input_features # [B, T, D]
 
 
 class WhiSPAModel(
     torch.nn.Module,
-    # WhisperGenerationMixin,
-    # WhisperPreTrainedModel,
     PyTorchModelHubMixin,
     repo_url='whispa',
     pipeline_tag='feature-extraction',
@@ -56,8 +55,11 @@ class WhiSPAModel(
         super().__init__()
         self.config = config
 
-        whisper = WhisperForConditionalGeneration.from_pretrained(config.whisper_model_id)
+        self.processor = WhiSPAProcessor(self.config)
+
+        whisper = WhisperForConditionalGeneration.from_pretrained(self.config.whisper_model_id)
         self.whisper_config = whisper.model.config
+        self.config.vocab_size = self.whisper_config.vocab_size
 
         self.spectral_encoder = whisper.model.encoder.to(dtype=config.dtype, device=config.device)
 
@@ -80,9 +82,6 @@ class WhiSPAModel(
             self._freeze_text_decoder()
 
         self.activation = torch.nn.Tanh().to(config.device)
-        
-        # Set up basic config attributes
-        self.config.vocab_size = self.whisper_config.vocab_size
 
 
     def _freeze_spectral_encoder(self):
@@ -155,7 +154,6 @@ class WhiSPAModel(
             total_loss = gate_weight * semantic_loss + (1 - gate_weight) * acoustic_loss + ortho_penalty
 
             return spectral_embedding, total_loss, semantic_loss, acoustic_loss, gate_weight, ortho_penalty
-
         
         elif self.config.stage == 'train_dec': # Pre-Training Stage 2
             assert isinstance(text_labels, torch.Tensor), f"Input: `text_labels` should be a torch.Tensor. This is a required input for stage: {self.config.stage}"
@@ -201,18 +199,24 @@ class WhiSPAModel(
             """
             This stage is the inference stage for autoregressively decoding text provided the input audio spectrogram.
             """
-            # For inference, we return the spectral latent which can be used for generation
-            # The actual text generation should be handled by the generate() method
-            # which will use the text_decoder and vocab_proj components
-            return spectral_latent
+            raise NotImplementedError(f"Autoregressive decoding for inference must be called using the `transcribe()` method, not `forward()`")
 
         else:
             raise NotImplementedError(f"The stage: {self.config.stage} is unknown. The options are [`train_enc`, `train_dec`, `encode`, `decode`]")
 
 
+    def encode(self, audio_path):
+        """
+        Encode audio into an embedding representation.
+        """
+        # Ensure the model config is set to "encode"
+        self.config.stage = "encode"
+        return self.forward(self.processor(audio_path))
+
+
     def generate(self, spectral_inputs, **kwargs):
         """
-        Generate text from audio spectrogram inputs.
+        Generate text from audio spectrogram inputs using sophisticated decoding.
         
         Args:
             spectral_inputs: Tensor of shape [B, T, D] - log-mel spectrogram
@@ -222,17 +226,20 @@ class WhiSPAModel(
             Generated token IDs
         """
         if self.config.stage not in ['decode', 'train_dec']:
-            raise ValueError(f"Generation is only supported in 'decode' or 'train_dec' stages, got {self.config.stage}")
+            raise ValueError(f"Generation is only supported in 'decode' or 'train_dec' stages, not '{self.config.stage}'")
         
-        # Create a generative model with our components
-        generative_model = WhisperForConditionalGeneration.from_pretrained(self.config.whisper_model_id)
-        generative_model.model.encoder = self.spectral_encoder
-        generative_model.model.decoder = self.text_decoder
-        generative_model.proj_out = self.vocab_proj
+        # Load generation model (no weights)
+        generation_model = WhisperForConditionalGeneration(self.whisper_config)
+        generation_model.generation_config = GenerationConfig.from_pretrained(self.config.whisper_model_id)
         
-        # Generate using the generative model
+        # Set our components (this uses our tunable weights)
+        generation_model.model.encoder = self.spectral_encoder
+        generation_model.model.decoder = self.text_decoder
+        generation_model.proj_out = self.vocab_proj
+        
+        # Generate using our weights
         with torch.no_grad():
-            generated_ids = generative_model.generate(
+            generated_ids = generation_model.generate(
                 input_features=spectral_inputs,
                 **kwargs
             )
@@ -240,27 +247,26 @@ class WhiSPAModel(
         return generated_ids
 
 
-    def transcribe(self, spectral_inputs, processor=None, **kwargs):
+    def transcribe(self, audio_path, **kwargs):
         """
         Transcribe audio spectrogram inputs to text.
         
         Args:
             spectral_inputs: Tensor of shape [B, T, D] - log-mel spectrogram
-            processor: WhisperProcessor for decoding tokens to text
             **kwargs: Additional arguments passed to the generation method
             
         Returns:
             List of transcribed text strings
         """
-        if processor is None:
-            processor = WhisperProcessor.from_pretrained(self.config.whisper_model_id)
-        
+        # Ensure the model config is set to "decode"
+        self.config.stage = "decode"
+
         # Generate token IDs
+        spectral_inputs = self.processor(audio_path)
         generated_ids = self.generate(spectral_inputs, **kwargs)
         
         # Decode tokens to text
-        transcriptions = processor.batch_decode(generated_ids, skip_special_tokens=True)
-        
+        transcriptions = self.processor.processor.batch_decode(generated_ids, skip_special_tokens=True)
         return transcriptions
     
 
