@@ -7,7 +7,7 @@ class WhiSPAConfig():
     def __init__(
         self,
         whisper_model_id: str = 'openai/whisper-medium',
-        language_model_id: str = 'jinaai/jina-embeddings-v3',
+        language_model_id: str = 'Qwen/Qwen3-Embedding-0.6B',
         # acoustic_teacher_id: str = 'hubert-large-ls960-ft',
         use_teacher_cache: bool = True,
         stage: str = 'encode',

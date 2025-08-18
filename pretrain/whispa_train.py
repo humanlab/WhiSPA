@@ -120,8 +120,9 @@ def load_args():
     )
     parser.add_argument(
         '--linguistic_teacher_id',
-        default='jinaai/jina-embeddings-v3',
+        default='Qwen/Qwen3-Embedding-0.6B',
         choices=[
+            'Qwen/Qwen3-Embedding-0.6B',
             'jinaai/jina-embeddings-v3',
             'sentence-transformers/all-roberta-large-v1',
         ],
@@ -130,10 +131,10 @@ def load_args():
     )
     parser.add_argument(
         '--acoustic_teacher_id',
-        default='facebook/hubert-large-ls960-ft',
+        default='openai/whisper-medium',
         choices=[
+            'openai/whisper-medium',
             'facebook/hubert-large-ls960-ft',
-            'openai/whisper-medium'
         ]
     )
     parser.add_argument(
