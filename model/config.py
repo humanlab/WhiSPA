@@ -6,7 +6,7 @@ import torch
 class WhiSPAConfig():
     def __init__(
         self,
-        whisper_model_id: str = 'openai/whisper-medium',
+        audio_model_id: str = 'mistralai/Voxtral-Mini-3B-2507',
         language_model_id: str = 'Qwen/Qwen3-Embedding-0.6B',
         # acoustic_teacher_id: str = 'hubert-large-ls960-ft',
         use_teacher_cache: bool = True,
@@ -20,9 +20,9 @@ class WhiSPAConfig():
         # spectral_decoder_ffn_dim: int = 4096,
         loss: str = 'NCE',
         dtype: torch.dtype = torch.bfloat16,
-        alpha: float = 1.0, # NCE loss weight
-        beta: float = 0.1, # Spectral recon loss weight
-        tau: float = 0.1, 
+        alpha: float = 0.5, # Dual Loss weight
+        beta: float = 0.5, # Dual Loss weight
+        tau: float = 0.1,
         batch_size: int = 1,
         num_workers: int = 1,
         num_epochs: int = 1,
@@ -33,7 +33,7 @@ class WhiSPAConfig():
         **kwargs,
     ):
         # Model IDs
-        self.whisper_model_id = whisper_model_id
+        self.audio_model_id = audio_model_id
         self.linguistic_teacher_id = language_model_id
         # self.acoustic_teacher_id = acoustic_teacher_id
         self.use_teacher_cache = use_teacher_cache
@@ -83,12 +83,29 @@ class WhiSPAConfig():
     def save_pretrained(self, local_dir: str):
         os.makedirs(local_dir, exist_ok=True)
         config_path = os.path.join(local_dir, "config.json")
+        
+        cfg = self.to_dict().copy()
+        # Convert non-JSON-serializable fields (e.g., torch.dtype) to strings
+        if isinstance(cfg.get("dtype"), torch.dtype):
+            cfg["dtype"] = str(cfg["dtype"])
+        
         with open(config_path, "w", encoding="utf-8") as f:
-            json.dump(self.to_dict(), f, indent=2)
+            json.dump(cfg, f, indent=2)
+
 
     @classmethod
     def from_pretrained(cls, local_dir: str):
         config_path = os.path.join(local_dir, "config.json")
         with open(config_path, "r", encoding="utf-8") as f:
             config_dict = json.load(f)
+
+        # Restore torch.dtype if serialized as string
+        dtype_val = config_dict.get("dtype")
+        if isinstance(dtype_val, str) and dtype_val.startswith("torch."):
+            try:
+                torch_dtype_name = dtype_val.split(".", 1)[1]
+                if hasattr(torch, torch_dtype_name):
+                    config_dict["dtype"] = getattr(torch, torch_dtype_name)
+            except Exception:
+                pass
         return cls(**config_dict)

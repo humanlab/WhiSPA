@@ -2,9 +2,9 @@
 /wandb
 /logs
 /loss
-/notebooks
 __pycache__
 .vscode
+sandbox.ipynb
 *.py[cod]
 *.pyo
 *.pyd
@@ -23,3 +23,12 @@ __pycache__
 *.h5
 *.hdf5
 *.hdf
+*.npy
+*.npz
+*.pt
+*.pth
+*.pkl
+*.pickle
+*.csv
+*.tsv
+*.json
