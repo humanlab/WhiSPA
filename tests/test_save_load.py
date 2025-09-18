@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 
 import sys, os
-BASE_DIR = os.path.join(os.path.dirname(__file__), '..')
-sys.path.append(os.path.abspath(BASE_DIR))
+# Add the root directory of the project to the Python path
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+if BASE_DIR not in sys.path:
+    sys.path.append(BASE_DIR)
 
 import time
 import torch
@@ -15,10 +17,10 @@ load_dotenv()
 
 def test_save_and_load_local():
     CHECKPOINT_DIR = os.getenv("CHECKPOINT_DIR")
-    save_dir = os.path.join(CHECKPOINT_DIR, "test_save_load")
+    save_dir = os.path.join(CHECKPOINT_DIR, "Voxtral-Mini-3B")
     os.makedirs(save_dir, exist_ok=True)
 
-    cfg = WhiSPAConfig(stage='encode', device='cpu', dtype=torch.bfloat16)
+    cfg = WhiSPAConfig(stage='inference', device='cpu', dtype=torch.bfloat16)
     model = WhiSPAModel(cfg).eval()
 
     # Save

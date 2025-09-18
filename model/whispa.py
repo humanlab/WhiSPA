@@ -2,8 +2,9 @@
 
 import sys, os
 # Add the root directory of the project to the Python path
-BASE_DIR = os.path.join(os.path.dirname(__file__), '..')
-sys.path.append(os.path.abspath(BASE_DIR))
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+if BASE_DIR not in sys.path:
+    sys.path.append(BASE_DIR)
 
 from typing import List
 import torch
@@ -17,13 +18,14 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from model.config import WhiSPAConfig
-from train.utils import nce_loss
+from train.utils import nmrl_loss
+from train.utils import trinary_alignment_loss
 
 
 class WhiSPAProcessor:
     def __init__(self, config: WhiSPAConfig):
         self.config = config
-        self.processor = VoxtralProcessor.from_pretrained(config.audio_model_id)
+        self.processor = VoxtralProcessor.from_pretrained(config.backbone_model_id)
 
     def __call__(self, audio: str | List[str], language: str = "en"):
         if isinstance(audio, str):
@@ -42,7 +44,7 @@ class WhiSPAProcessor:
         batch = self.processor.apply_transcription_request(
             audio=audio,
             language=language,
-            model_id=self.config.audio_model_id,
+            model_id=self.config.backbone_model_id,
             **kwargs
         )
 
@@ -71,16 +73,15 @@ class WhiSPAModel(
     license='mit'
 ):
     """
-    The WhiSPA model is a speech model that provides a unified embedding space rich in semantic and acoustic information.
+    The WhiSPA model is a speech model that provides a unified embedding space rich in semantic, acoustic, and affective information.
     The model is trained in two stages:
-    1. Training Stage 1: The spectral encoder and multimodal projector is trained to align with semantic and acoustic embeddings.
-    2. Training Stage 2: The text decoder language model is trained to transcribe the text from the spectral embeddings (while the spectral encoder and multimodal projector are frozen).
+    1. Training Stage 1: The spectral encoder and multimodal projector are jointly trained to align with semantic, acoustic, and affective embeddings.
+    2. Training Stage 2: The text decoder language model is trained to transcribe the text from the spectral embeddings (while the other components are frozen).
 
     The model can be used in three modes:
-    1. 'encode': The model is used to encode the input audio spectrogram into an embedding representation.
-    2. 'decode': The model is used to autoregressively decode text provided the input audio spectrogram.
-    3. 'train_enc': Training Stage 1.
-    4. 'train_dec': Training Stage 2.
+    1. 'train_enc': Training Stage 1.
+    2. 'train_dec': Training Stage 2.
+    3. 'inference': The model can be used in inference mode to encode/decode audio files.
     """
     def __init__(self, config: WhiSPAConfig):
         super().__init__()
@@ -89,28 +90,30 @@ class WhiSPAModel(
         self.processor = WhiSPAProcessor(self.config)
 
         # Load Voxtral backbone
-        self.voxtral = VoxtralForConditionalGeneration.from_pretrained(self.config.audio_model_id)
+        self.voxtral = VoxtralForConditionalGeneration.from_pretrained(self.config.backbone_model_id)
         self.config.vocab_size = self.voxtral.config.text_config.vocab_size
 
         # Decomposed modules
         self.spectral_encoder = self.voxtral.audio_tower.to(dtype=config.dtype, device=config.device)
         self.multi_modal_projector = self.voxtral.multi_modal_projector.to(dtype=config.dtype, device=config.device)
         self.language_model = self.voxtral.language_model.to(dtype=config.dtype, device=config.device)
-        
 
+        # Set Loss functions
+        if self.config.loss == "NMRL":
+            self.loss_fn = nmrl_loss
+        elif self.config.loss == "TAL":
+            self.loss_fn = trinary_alignment_loss
+        else:
+            raise ValueError(f"Invalid loss function: {self.config.loss}. Must be one of ['NMRL', 'TAL'].")
+        
         if config.stage == 'train_enc': # Training Stage 1
-            # self.spectral_decoder = WhiSPASpectralDecoder(config).to(dtype=config.dtype, device=config.device)
-            self.gating_network = WhiSPAGatingNetwork(dtype=config.dtype, device=config.device)
             self._freeze_language_model()
 
         if config.stage == 'train_dec': # Training Stage 2
             self._freeze_spectral_encoder()
             self._freeze_projector()
 
-        elif config.stage == 'encode': # Inference (Encoding)
-            self._freeze_spectral_encoder()
-
-        elif config.stage == 'decode': # Inference (Decoding)
+        else: # Inference
             # Freeze all components for inference
             self._freeze_spectral_encoder()
             self._freeze_projector()
@@ -145,9 +148,10 @@ class WhiSPAModel(
             [batch_size, hidden_size] mean embeddings per sample
         """
         batch_size = sample_spans.size(0)
-        counts = (sample_spans[:, 1] - sample_spans[:, 0]).to(torch.long)
-        segment_ids = torch.repeat_interleave(torch.arange(batch_size, device=self.config.device), counts)
-        sums = torch.zeros((batch_size, spectral_latent.size(1)), device=self.config.device, dtype=spectral_latent.dtype)
+        device = spectral_latent.device
+        counts = (sample_spans[:, 1] - sample_spans[:, 0]).to(dtype=torch.long, device=device)
+        segment_ids = torch.repeat_interleave(torch.arange(batch_size, device=device), counts)
+        sums = torch.zeros((batch_size, spectral_latent.size(1)), device=device, dtype=spectral_latent.dtype)
         sums.index_add_(0, segment_ids, spectral_latent)
         means = sums / counts.clamp_min(1).unsqueeze(1)
         return means
@@ -161,7 +165,7 @@ class WhiSPAModel(
 
     
     def get_text_embeddings(self, text_input_ids: torch.Tensor, spectral_latent: torch.Tensor):
-        inputs_embs = self.language_model.get_input_embeddings()(text_input_ids)
+        inputs_embs = self.language_model.get_input_embeddings()(text_input_ids)        
         audio_token_mask = text_input_ids == self.voxtral.config.audio_token_id
         inputs_embs[audio_token_mask] = spectral_latent
         return inputs_embs
@@ -173,6 +177,7 @@ class WhiSPAModel(
         sample_spans: torch.LongTensor,
         target_audio_embs: torch.FloatTensor = None,
         target_text_embs: torch.FloatTensor = None,
+        target_psych_embs: torch.FloatTensor = None,
         text_input_ids: torch.LongTensor = None,
         text_attention_mask: torch.LongTensor = None,
         text_labels: torch.LongTensor = None,
@@ -181,9 +186,11 @@ class WhiSPAModel(
         This method is the forward pass of the WhiSPA model.
 
         Inputs:
-            spectral_inputs: Tensor of shape [N, mel_bins, time_steps] - log-mel spectrogram passed to the Voxtral encoder.
-            target_audio_embs: Tensor of shape [batch_size, hidden_size] - target acoustic embedding to align with the spectral embeddings.
-            target_text_embs: Tensor of shape [batch_size, hidden_size] - target text embedding to align with the spectral embeddings.
+            spectral_inputs: Tensor of shape [batch_size, mel_bins, time_steps] - log-mel spectrogram passed to the Voxtral encoder.
+            sample_spans: Tensor of shape [batch_size, 2] - start/end indices into spectral_inputs.
+            target_audio_embs: Tensor of shape [batch_size, hidden_size] - target acoustic embeddings to align with the spectral embeddings.
+            target_text_embs: Tensor of shape [batch_size, hidden_size] - target text embeddings to align with the spectral embeddings.
+            target_psych_embs: Tensor of shape [batch_size, hidden_size] - target psychological embeddings to align with the spectral embeddings.
             text_input_ids: Tensor of shape [batch_size, num_tokens] - input text tokens passed to the text decoder.
             text_attention_mask: Tensor of shape [batch_size, num_tokens] - text attention mask passed to the text decoder.
             text_labels: Tensor of shape [batch_size, num_tokens] - transcription text tokens passed to the text decoder.
@@ -192,8 +199,6 @@ class WhiSPAModel(
             total_loss: Total loss
             semantic_loss: Loss for the text modality
             acoustic_loss: Loss for the audio modality
-            weight: Gated weight for the dual modality loss
-            ortho_penalty: Orthogonality penalty
         """
         spectral_latent = self.get_spectral_embeddings(spectral_inputs.to(self.config.device)) # [375 * N, hidden_size]
 
@@ -211,34 +216,19 @@ class WhiSPAModel(
             spectral_embs = F.normalize(spectral_embs, p=2, dim=1) # [B, D]
             target_audio_embs = F.normalize(target_audio_embs, p=2, dim=1) # [B, D]
             target_text_embs = F.normalize(target_text_embs, p=2, dim=1) # [B, D]
-
-            semantic_loss = nce_loss(spectral_embs, target_text_embs)
-            acoustic_loss = nce_loss(spectral_embs, target_audio_embs)
+            target_psych_embs = F.normalize(target_psych_embs, p=2, dim=1) # [B, D]
 
             # Compute orthogonality penalty
-            ortho_penalty = torch.norm(target_audio_embs.T @ target_text_embs, p='fro')**2
+            # ortho_penalty = torch.norm(target_audio_embs.T @ target_text_embs, p='fro')**2
 
-            # # Compute gated weights
-            # mod_stats = torch.tensor(
-            #     [
-            #         F.cosine_similarity(target_audio_embs, target_text_embs).mean(),
-            #         torch.var(target_audio_embs, 1).mean(),
-            #         torch.var(target_text_embs, 1).mean()
-            #     ],
-            #     dtype=self.gating_network.dtype,
-            #     device=self.gating_network.device
-            # )
-            # gate_weight = self.gating_network(mod_stats).unsqueeze(0)
-
-            total_loss = self.config.alpha * semantic_loss + (1 - self.config.alpha) * acoustic_loss + ortho_penalty
+            total_loss, acoustic_loss, semantic_loss, affective_loss = self.loss_fn(spectral_embs, target_audio_embs, target_text_embs, target_psych_embs)
 
             return {
                 "spectral_embs": spectral_embs,
                 "total_loss": total_loss,
-                "semantic_loss": semantic_loss,
                 "acoustic_loss": acoustic_loss,
-                "weight": self.config.alpha,
-                "ortho_penalty": ortho_penalty,
+                "semantic_loss": semantic_loss,
+                "affective_loss": affective_loss
             }
         
         elif self.config.stage == 'train_dec': # Training Stage 2
@@ -255,10 +245,6 @@ class WhiSPAModel(
 
             inputs_embs = self.get_text_embeddings(text_input_ids, spectral_latent)
 
-            # num_audio_tokens = int(audio_token_mask.sum().item())
-            # if num_audio_tokens != spectral_latent.shape[0]:
-            #     raise ValueError(f"Mismatch between number of audio tokens ({num_audio_tokens}) and audio embeddings ({spectral_latent.shape[0]}). Ensure inputs were prepared with VoxtralProcessor.")
-
             # Forward-pass through language model
             outputs = self.language_model(
                 attention_mask=text_attention_mask,
@@ -268,7 +254,7 @@ class WhiSPAModel(
             )
             return outputs
 
-        elif self.config.stage == 'encode': # Inference (Encoding)
+        elif self.config.stage == 'inference': # Inference (Encoding)
             """
             This stage is the inference stage for encoding the input audio spectrogram into an embedding representation.
             """
@@ -276,28 +262,20 @@ class WhiSPAModel(
             spectral_embs = self.compute_per_sample_means(spectral_latent, sample_spans) # [B, D]
             spectral_embs = self.activation(spectral_embs) # [B, D]
             return F.normalize(spectral_embs, p=2, dim=1) # [B, D]
-        
-        elif self.config.stage == 'decode': # Inference (Decoding)
-            """
-            This stage is the inference stage for autoregressively decoding text provided the input audio spectrogram.
-            """
-            assert isinstance(text_input_ids, torch.Tensor), f"Input: `text_input_ids` should be a torch.Tensor. This is a required input for stage: {self.config.stage}"
-            assert isinstance(text_attention_mask, torch.Tensor), f"Input: `text_attention_mask` should be a torch.Tensor. This is a required input for stage: {self.config.stage}"
-            
-            raise NotImplementedError(f"Inference (Decoding) is not implemented for stage: {self.config.stage}. Please use the `transcribe()` method instead.")
 
         else:
-            raise NotImplementedError(f"The stage: {self.config.stage} is unknown. The options are [`train_enc`, `train_dec`, `encode`, `decode`]")
+            raise NotImplementedError(f"The stage: {self.config.stage} is unknown. The options are [`train_enc`, `train_dec`, `inference`]")
 
 
     def encode(self, audio: str | List[str], language: str = "en"):
         """
         Encode audio into an embedding representation.
         """
-        # Ensure the model config is set to "encode"
-        self.config.stage = "encode"
+        # Ensure the model config is set to "inference"
+        self.config.stage = "inference"
 
         inputs = self.processor(audio, language=language)
+        
         with torch.no_grad():
             return self.forward(**inputs)
 
@@ -313,14 +291,14 @@ class WhiSPAModel(
         Returns:
             List[str]: transcriptions
         """
-        # Ensure decode stage
-        self.config.stage = "decode"
+        # Ensure inference stage
+        self.config.stage = "inference"
 
-        # Prepare raw inputs expected by VoxtralForConditionalGeneration (matches model card)
+        # Prepare raw inputs expected by VoxtralForConditionalGeneration
         inputs = self.processor.processor.apply_transcription_request(
             language=language,
             audio=audio,
-            model_id=self.config.audio_model_id,
+            model_id=self.config.backbone_model_id,
         )
         for k, v in inputs.items():
             if v.dtype.is_floating_point:
@@ -398,6 +376,9 @@ class WhiSPAModel(
         return cls._from_pretrained(local_dir=local_dir)
 
 
+"""
+@deprecated("This class is deprecated and will be removed in a future version.")
+"""
 class WhiSPAGatingNetwork(torch.nn.Module):
     """
     Gated Weight (α) via Acoustic-Semantic Correlation Estimator
@@ -428,6 +409,9 @@ class WhiSPAGatingNetwork(torch.nn.Module):
         return torch.sigmoid(self.fc2(x)).squeeze(-1)
           
 
+"""
+@deprecated("This class is deprecated and will be removed in a future version.")
+"""
 class WhiSPASpectralDecoder(torch.nn.Module):
     """
         Originally intended to be used for reconstructing the log-mel spectrogram from the latent space of the Whisper encoder.

@@ -1,3 +1,6 @@
+from typing import Optional, Dict, Any
+import re
+import json
 import torch
 import torchaudio
 from torch.nn.utils.rnn import pad_sequence
@@ -6,7 +9,26 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-def preprocess_audio(audio_path):
+def fenced_json_str_to_json(text: str) -> Optional[str]:
+    # Prefer ```json ...``` then any ``` ... ```
+    pattern = re.compile(r"```(\w+)?\s*[\r\n]+(.*?)[\r\n]+```", re.DOTALL | re.IGNORECASE)
+    matches = list(pattern.finditer(text))
+    if not matches:
+        return None
+    # Prefer label json
+    for m in matches:
+        lang = (m.group(1) or "").strip().lower()
+        if lang == "json":
+            return m.group(2).strip()
+    return matches[0].group(2).strip()
+
+
+def json_to_fenced_json_str(obj: Dict[str, Any]) -> str:
+    json_str = json.dumps(obj, indent=2, ensure_ascii=False)
+    return f"```json\n{json_str}\n```"
+
+
+def preprocess_audio(audio_path, target_sampling_rate=16000):
     waveform, sample_rate = torchaudio.load(audio_path)
 
     # Convert stereo (or multi-channel) to mono if needed
@@ -14,8 +36,8 @@ def preprocess_audio(audio_path):
         waveform = torch.mean(waveform, dim=0, keepdim=True)
         
     # Resample if necessary (Whisper requires 16kHz input)
-    if sample_rate != 16000:
-        waveform = torchaudio.transforms.Resample(orig_freq=sample_rate, new_freq=16000)(waveform)
+    if sample_rate != target_sampling_rate:
+        waveform = torchaudio.transforms.Resample(orig_freq=sample_rate, new_freq=target_sampling_rate)(waveform)
     return waveform
 
 

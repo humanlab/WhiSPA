@@ -2,21 +2,47 @@ import torch
 import torch.nn.functional as F
 
 
-def mean_pooling(embeddings, attention_mask):
+def mean_token_pool(embeddings: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
+    """
+    Mean pool the embeddings over valid (non-masked) tokens.
+
+    Args:
+        embeddings: Token embeddings from the model (batch_size, seq_len, hidden_dim)
+        attention_mask: Attention mask indicating valid tokens (batch_size, seq_len)
+
+    Returns:
+        Mean pooled embeddings (batch_size, hidden_dim)
+    """
     input_mask_expanded = attention_mask.unsqueeze(-1).expand(embeddings.size()).float()
-    return torch.sum(embeddings * input_mask_expanded, 1) / torch.clamp(input_mask_expanded.sum(1), min=1e-9)
+    sum_embeddings = torch.sum(embeddings * input_mask_expanded, dim=1)
+    sum_mask = input_mask_expanded.sum(dim=1)
+    return sum_embeddings / torch.clamp(sum_mask, min=1e-9)
 
 
-def last_pooling(embeddings, attention_mask):
-    non_padding_indices = attention_mask.cumsum(dim=1) - 1
-    last_non_padding_indices = non_padding_indices.gather(1, (attention_mask.sum(dim=1, keepdim=True) - 1).clamp(min=0).long())
-    return embeddings[torch.arange(attention_mask.size(0)).unsqueeze(1), last_non_padding_indices].squeeze()
+def last_token_pool(last_hidden_states: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
+    """
+    Pool the last token from sequences, handling both left and right padding.
+    
+    Args:
+        last_hidden_states: Hidden states from the model
+        attention_mask: Attention mask indicating valid tokens
+    
+    Returns:
+        Pooled embeddings using the last valid token
+    """
+    left_padding = (attention_mask[:, -1].sum() == attention_mask.shape[0])
+    if left_padding:
+        return last_hidden_states[:, -1]
+    else:
+        sequence_lengths = attention_mask.sum(dim=1) - 1
+        batch_size = last_hidden_states.shape[0]
+        return last_hidden_states[torch.arange(batch_size, device=last_hidden_states.device), sequence_lengths]
 
 
 # Cosine Similarity Loss
 def cs_loss(audio_embs, text_embs):
-    # z_audio = F.normalize(audio_embs, p=2, dim=1)
-    # z_text = F.normalize(text_embs, p=2, dim=1)
+    # z_audio = F.normalize(audio_embs, p=2, dim=-1)
+    # z_text = F.normalize(text_embs, p=2, dim=-1)
     # return 1 - (z_audio * z_text).sum(dim=-1).mean()
     # Yields exactly the same result as torch.cosine_similarity()
     return 1 - torch.cosine_similarity(audio_embs, text_embs, dim=-1).mean()
@@ -34,10 +60,10 @@ def sim_clr_loss(audio_embs, text_embs):
     return positive_loss + negative_loss
 
 
-# Noise Contrastive Estimation Loss
-def nce_loss(z_a, z_b, 𝜏=0.1, pooling_mode='sum'):
+# Noise Contrastive Estimation (NCE)
+def nce_loss(z_a: torch.Tensor, z_b: torch.Tensor, 𝜏: float = 0.1) -> torch.Tensor:
     """
-        Helpful link I used for reference:
+        Helpful link for reference:
         https://jamesmccaffrey.wordpress.com/2022/04/11/an-example-of-normalized-temperature-scaled-cross-entropy-loss/
         
         Implemented from the paper:
@@ -58,80 +84,231 @@ def nce_loss(z_a, z_b, 𝜏=0.1, pooling_mode='sum'):
     neg_sims_sum = similarity_matrix[:batch_size].sum(dim=1) - torch.diag(similarity_matrix[:batch_size])
     
     losses = -torch.log(pos_sims / neg_sims_sum)
-    return losses.sum() if pooling_mode == 'sum' else losses.mean()
+    return losses.sum()
 
 
-def dwd_loss(
-    gating_net,
-    whispa_embs,
-    linguistic_embs,
-    acoustic_embs,
-    psych_embs=None,
-    λ=0.1,
-    𝜏=0.1
-):
+# Matryoshka Representation Learning (MRL)
+def mrl_loss(
+    z_a: torch.Tensor, # [N, D]
+    z_b: torch.Tensor, # [N, D]
+    K: int = 5,
+    𝜏: float = 0.1,
+) -> torch.Tensor:
     """
-        Dynamically Weighted Distillation with Modality-Specific Gates
-        ------------------------------
-        L_DWD = α⋅Contrastive(Z, A) + (1−α)⋅Contrastive(Z, L) + λ⋅OrthoPenalty(A, L)
-        α: Gated weight from acoustic-textual correlation estimator
-        OrthoPenalty: Penalizes redundancy between A (acoustic) and L (linguistic) subspaces
-        ------------------------------
-    """
-    # Normalize all embeddings
-    Z = F.normalize(whispa_embs, dim=-1)
-    A = F.normalize(acoustic_embs, dim=-1)
-    L = F.normalize(linguistic_embs, dim=-1)
-
-    if psych_embs is None:
-        acoustic_loss = nce_loss(Z, A, 𝜏)
-        linguistic_loss = nce_loss(Z, L, 𝜏)
-        ortho = torch.norm(A.T @ L, p='fro')**2
-
-        # Compute gating network inputs
-        with torch.no_grad():
-            mod_sim = F.cosine_similarity(A, L).mean()
-            var_acoustic = torch.var(A)
-            var_linguistic = torch.var(L)
-        
-        gate_inputs = torch.tensor(
-            [mod_sim, var_acoustic, var_linguistic],
-            dtype=gating_net.module.dtype if isinstance(gating_net, torch.nn.parallel.DistributedDataParallel) \
-                else gating_net.dtype,
-            device=gating_net.module.device if isinstance(gating_net, torch.nn.parallel.DistributedDataParallel) \
-                else gating_net.device
-        ).unsqueeze(0)
-        α = gating_net(gate_inputs)
-
-        # Final loss
-        total_loss = (α * acoustic_loss + (1-α) * linguistic_loss + λ * ortho)
-        return total_loss, α, acoustic_loss, linguistic_loss, ortho
-    else:
-        raise Exception('Not Implemented!')
-        
-
-def spectral_recon_loss(pred, target, alpha=1.0, beta=1.0):
-    """
-    Robust spectral reconstruction loss:
-    - log-cosh frame loss
-    - spectral convergence (linear magnitude)
+    Efficient MRL loss using masked prefixes (no per-k slicing in Python loops).
 
     Args:
-        pred: [B, 80, T] - predicted log-mel
-        target: [B, 80, T] - ground truth log-mel
+        z_a, z_b: float tensors of shape [N, D], unnormalized embeddings.
+        K: number of Matryoshka prefixes
+        𝜏: temperature for InfoNCE.
 
     Returns:
-        Scalar loss
+        Scalar tensor: sum of InfoNCE losses across all prefixes.
     """
-    def log_cosh_loss(pred, target, eps=1e-6):
-        return torch.mean(torch.log(torch.cosh(pred - target + eps)))
+    def _create_nesting_weights(
+        D: int,
+        K: int,
+        device: torch.device,
+        dtype: torch.dtype,
+        mode: str = "inv_sqrt",
+        alpha: float = 1.0,
+        cap_ratio: float = None,
+    ) -> tuple[list[int], torch.Tensor]:
+        """
+        Generate Matryoshka nesting levels and their associated weights for MRL loss.
 
-    def spectral_convergence_loss(pred_mag, target_mag):
-        return torch.norm(target_mag - pred_mag, p='fro') / (torch.norm(target_mag, p='fro') + 1e-9)
+        Args:
+            D (int): The embedding dimensionality (full dimension).
+            K (int): Number of nesting levels (prefixes) to generate.
+            device (torch.device): Device to place the resulting tensor on.
+            dtype (torch.dtype): Data type for the weights tensor.
+            mode (str, optional): Weighting mode. One of {"inv_sqrt", "inv", "exp"}.
+                - "inv_sqrt": weights = (D / k) ** (0.5 * alpha)
+                - "inv":      weights = (D / k) ** (1.0 * alpha)
+                - "exp":      weights = exp(-alpha * k / D)
+            alpha (float, optional): Exponent or scaling factor for weighting. Default: 1.0.
+            cap_ratio (float, optional): If set, clamps minimum weight to (max_weight / cap_ratio)
+                to avoid extreme ratios. Default: None (no capping).
 
-    # Log-Cosh in log-mel domain
-    logcosh = log_cosh_loss(pred, target)
-    # Spectral convergence in linear scale
-    spec_conv = spectral_convergence_loss(torch.exp(pred), torch.exp(target))
+        Returns:
+            nesting (list[int]): List of prefix lengths for each nesting level, e.g. [1024, 512, 256, ...].
+            weights (torch.Tensor): 1D tensor of shape [len(nesting)] with normalized weights (mean=1).
 
-    return alpha * logcosh + beta * spec_conv
+        Example:
+            >>> nesting, weights = _create_nesting_weights(1024, 5, torch.device('cpu'), torch.float32)
+            >>> print(nesting)  # [1024, 512, 256, 128, 64]
+            >>> print(weights)  # tensor of shape [5], normalized so mean == 1
+        """
+        # Create nesting levels [D, D//2, D//4, D//8, D//16]
+        nesting = [D]
+        for _ in range(K - 1):
+            k = nesting[-1] // 2
+            if k < 1:
+                break
+            nesting.append(k)
+        
+        # Create weights using selected mode
+        weights = torch.tensor(nesting, device=device, dtype=dtype)
+        if mode == "inv_sqrt":
+            weights = (D / weights).pow(0.5 * alpha)
+        elif mode == "inv":
+            weights = (D / weights).pow(1.0 * alpha)
+        elif mode == "exp":
+            weights = torch.exp(-alpha * weights / D)
+        else:
+            raise ValueError(f"Invalid MRL weighting mode: {mode}")
+
+        # Optional: cap extreme ratios
+        if cap_ratio is not None and cap_ratio > 0:
+            weights = weights.clamp(min=weights.max() / cap_ratio)
+
+        # Normalize so mean weight == 1 (keeps overall loss scale steady)
+        weights = weights * (len(nesting) / weights.sum())
+
+        return nesting, weights
+
+
+    device, dtype = z_a.device, z_a.dtype
+    nesting, weights = _create_nesting_weights(z_a.shape[-1], K, device, dtype)
+
+    # Build a [K, D] binary mask where row i has ones in [0:k_i)
+    mask = torch.zeros(K, z_a.shape[-1], device=device, dtype=dtype)
+    for i, k in enumerate(nesting):
+        mask[i, :k] = 1
+
+    # Masked prefixes in one shot (truncated prefixes): [K, N, D]
+    a_masked = z_a.unsqueeze(0) * mask[:, None, :] # [K, N, D]
+    b_masked = z_b.unsqueeze(0) * mask[:, None, :] # [K, N, D]
+
+    # Per-prefix L2 normalization
+    a_unit = torch.nn.functional.normalize(a_masked, p=2, dim=-1) # [K, N, D]
+    b_unit = torch.nn.functional.normalize(b_masked, p=2, dim=-1) # [K, N, D]
+
+    # Accumulate NCE losses across K levels
+    total = z_a.new_tensor(0.0)
+    for i in range(K):
+        # pass full-D masked & normalized vectors; trailing dims are zeros
+        total = total + weights[i] * nce_loss(a_unit[i], b_unit[i], 𝜏)
+
+    return total
+
+
+# Nested Matryoshka Representation Loss (NMRL)
+def nmrl_loss(
+    whispa_embs: torch.Tensor,
+    audio_embs: torch.Tensor,
+    text_embs: torch.Tensor,
+    psych_embs: torch.Tensor,
+    K: int = 5,
+    𝜏: float = 0.1,
+) -> torch.Tensor:
+    """
+    Nested Matryoshka Representation Loss
+    
+        L_NMRL = 0.33 * MRL(Z, A) + 0.33 * MRL(Z, B) + 0.33 * MRL(Z, C)
+        Z: Whispa embeddings
+        A: Audio embeddings
+        B: Text embeddings
+        C: Psychological embeddings
+    
+    """
+    acoustic_loss = mrl_loss(whispa_embs, audio_embs, K, 𝜏)
+    semantic_loss = mrl_loss(whispa_embs[:, :text_embs.shape[1]], text_embs, K, 𝜏)
+    affective_loss = mrl_loss(whispa_embs[:, -psych_embs.shape[1]:], psych_embs, K, 𝜏)
+    total_loss = (acoustic_loss + semantic_loss + affective_loss) / 3
+    return total_loss, acoustic_loss, semantic_loss, affective_loss
+
+
+# Trinary Alignment Loss (TAL)
+def trinary_alignment_loss(whispa_embs, audio_embs, text_embs, psych_embs, 𝜏=0.1):
+    """
+    Trinary Alignment Loss
+    ==============================
+    L_TAL = 0.33 * NCE(Z, A) + 0.33 * NCE(Z, B) + 0.33 * NCE(Z, C)
+    Z: Whispa embeddings
+    A: Audio embeddings
+    B: Text embeddings
+    C: Psychological embeddings
+    ==============================
+    """
+    acoustic_loss = nce_loss(whispa_embs, audio_embs, 𝜏)
+    semantic_loss = nce_loss(whispa_embs, text_embs, 𝜏)
+    affective_loss = nce_loss(whispa_embs, psych_embs, 𝜏)
+    total_loss = (acoustic_loss + semantic_loss + affective_loss) / 3
+    return total_loss, acoustic_loss, semantic_loss, affective_loss
+
+
+# def dwd_loss(
+#     gating_net,
+#     whispa_embs,
+#     linguistic_embs,
+#     acoustic_embs,
+#     psych_embs=None,
+#     λ=0.1,
+#     𝜏=0.1
+# ):
+#     """
+#         Dynamically Weighted Distillation with Modality-Specific Gates
+#         ------------------------------
+#         L_DWD = α⋅Contrastive(Z, A) + (1−α)⋅Contrastive(Z, L) + λ⋅OrthoPenalty(A, L)
+#         α: Gated weight from acoustic-textual correlation estimator
+#         OrthoPenalty: Penalizes redundancy between A (acoustic) and L (linguistic) subspaces
+#         ------------------------------
+#     """
+#     # Normalize all embeddings
+#     Z = F.normalize(whispa_embs, dim=-1)
+#     A = F.normalize(acoustic_embs, dim=-1)
+#     L = F.normalize(linguistic_embs, dim=-1)
+
+#     if psych_embs is None:
+#         acoustic_loss = nce_loss(Z, A, 𝜏)
+#         linguistic_loss = nce_loss(Z, L, 𝜏)
+#         ortho = torch.norm(A.T @ L, p='fro')**2
+
+#         # Compute gating network inputs
+#         with torch.no_grad():
+#             mod_sim = F.cosine_similarity(A, L).mean()
+#             var_acoustic = torch.var(A)
+#             var_linguistic = torch.var(L)
+        
+#         gate_inputs = torch.tensor(
+#             [mod_sim, var_acoustic, var_linguistic],
+#             dtype=gating_net.module.dtype if isinstance(gating_net, torch.nn.parallel.DistributedDataParallel) \
+#                 else gating_net.dtype,
+#             device=gating_net.module.device if isinstance(gating_net, torch.nn.parallel.DistributedDataParallel) \
+#                 else gating_net.device
+#         ).unsqueeze(0)
+#         α = gating_net(gate_inputs)
+
+#         # Final loss
+#         total_loss = (α * acoustic_loss + (1-α) * linguistic_loss + λ * ortho)
+#         return total_loss, α, acoustic_loss, linguistic_loss, ortho
+#     else:
+#         raise Exception('Not Implemented!')
+        
+
+# def spectral_recon_loss(pred, target, alpha=1.0, beta=1.0):
+#     """
+#     Robust spectral reconstruction loss:
+#     - log-cosh frame loss
+#     - spectral convergence (linear magnitude)
+
+#     Args:
+#         pred: [B, 80, T] - predicted log-mel
+#         target: [B, 80, T] - ground truth log-mel
+
+#     Returns:
+#         Scalar loss
+#     """
+#     def log_cosh_loss(pred, target, eps=1e-6):
+#         return torch.mean(torch.log(torch.cosh(pred - target + eps)))
+
+#     def spectral_convergence_loss(pred_mag, target_mag):
+#         return torch.norm(target_mag - pred_mag, p='fro') / (torch.norm(target_mag, p='fro') + 1e-9)
+
+#     # Log-Cosh in log-mel domain
+#     logcosh = log_cosh_loss(pred, target)
+#     # Spectral convergence in linear scale
+#     spec_conv = spectral_convergence_loss(torch.exp(pred), torch.exp(target))
+
+#     return alpha * logcosh + beta * spec_conv

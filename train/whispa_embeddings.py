@@ -41,10 +41,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from pretrain.whispa_config import WhiSPAConfig
-from pretrain.whispa_utils import mean_pooling
-from pretrain.whispa_model import WhiSPAModel
-from pretrain.whispa_data import AudioDataset, collate_inference
+from train.utils import mean_token_pool, last_token_pool
 from threading import Lock
 
 
@@ -218,7 +215,7 @@ def inference(
 
                 # Get SBERT's MEAN embedding
                 sbert_embs = model.module(**sbert_inputs).last_hidden_state
-                sbert_embs = mean_pooling(sbert_embs, sbert_inputs['attention_mask'])
+                sbert_embs = mean_token_pool(sbert_embs, sbert_inputs['attention_mask'])
                 embs = F.normalize(sbert_embs, p=2, dim=1)
             
             elif save_name == 'jina-embeddings-v3':

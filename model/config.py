@@ -6,10 +6,10 @@ import torch
 class WhiSPAConfig():
     def __init__(
         self,
-        audio_model_id: str = 'mistralai/Voxtral-Mini-3B-2507',
-        language_model_id: str = 'Qwen/Qwen3-Embedding-0.6B',
-        # acoustic_teacher_id: str = 'hubert-large-ls960-ft',
-        use_teacher_cache: bool = True,
+        backbone_model_id: str = 'mistralai/Voxtral-Mini-3B-2507',
+        # language_model_id: str = 'Qwen/Qwen3-Embedding-0.6B',
+        # audio_model_id: str = 'openai/whisper-medium',
+        # use_teacher_cache: bool = True,
         stage: str = 'encode',
         pooling_mode: str = 'mean',
         hidden_size: int = 1024,
@@ -18,11 +18,11 @@ class WhiSPAConfig():
         # spectral_decoder_n_layers: int = 6,
         # spectral_decoder_n_heads: int = 8,
         # spectral_decoder_ffn_dim: int = 4096,
-        loss: str = 'NCE',
+        loss: str = 'NMRL',
         dtype: torch.dtype = torch.bfloat16,
-        alpha: float = 0.5, # Dual Loss weight
-        beta: float = 0.5, # Dual Loss weight
-        tau: float = 0.1,
+        # alpha: float = 0.5, # Trinary Alignment Loss
+        # beta: float = 0.5, # Trinary Alignment Loss
+        tau: float = 0.1, # Temperature for NCE
         batch_size: int = 1,
         num_workers: int = 1,
         num_epochs: int = 1,
@@ -33,12 +33,16 @@ class WhiSPAConfig():
         **kwargs,
     ):
         # Model IDs
-        self.audio_model_id = audio_model_id
-        self.linguistic_teacher_id = language_model_id
-        # self.acoustic_teacher_id = acoustic_teacher_id
-        self.use_teacher_cache = use_teacher_cache
+        backbones = {'mistralai/Voxtral-Mini-3B-2507', 'mistralai/Voxtral-Small-24B-2507'}
+        if backbone_model_id not in backbones:
+            raise ValueError(f"Invalid backbone model: `{backbone_model_id}`. Must be one of [{backbones}].")
+        self.backbone_model_id = backbone_model_id
 
-        stages = {'train_enc', 'train_dec', 'encode', 'decode'}
+        # self.language_model_id = language_model_id
+        # self.audio_teacher_id = audio_teacher_id
+        # self.use_teacher_cache = use_teacher_cache
+        
+        stages = {'train_enc', 'train_dec', 'inference'}
         if stage not in stages:
             raise ValueError(f"Invalid stage: `{stage}`. Must be one of [{stages}].")
         self.stage = stage
@@ -51,10 +55,17 @@ class WhiSPAConfig():
         # self.spectral_decoder_n_layers = spectral_decoder_n_layers
         # self.spectral_decoder_n_heads = spectral_decoder_n_heads
         # self.spectral_decoder_ffn_dim = spectral_decoder_ffn_dim
+        losses = {'NMRL', 'TAL'}
+        """ 
+        - NMRL: Nested Matryoshka Representation Loss
+        - TAL: Trinary Alignment Loss
+        """
+        if loss not in losses:
+            raise ValueError(f"Invalid loss: `{loss}`. Must be one of [{losses}].")
         self.loss = loss
         self.dtype = dtype
-        self.alpha = alpha
-        self.beta = beta
+        # self.alpha = alpha
+        # self.beta = beta
         self.tau = tau
 
         # Training parameters

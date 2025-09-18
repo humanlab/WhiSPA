@@ -7,13 +7,27 @@ if BASE_DIR not in sys.path:
     sys.path.append(BASE_DIR)
 
 """
-Test script for WhiSPA model with real audio files.
-Tests both single and batched calls.
+Test script for WhiSPA model loaded from local checkpoint.
+Tests both single and batched calls across all stages.
+
+This script loads a model from an existing checkpoint once and tests all stages
+by dynamically changing model.config.stage:
+- encode() functionality (stage='inference')
+- transcribe() functionality (stage='inference')
+- forward() in train_dec stage (stage='train_dec')
+- forward() in train_enc stage (stage='train_enc')
+
+The checkpoint path is determined by the CHECKPOINT_DIR environment variable 
+(defaults to {CHECKPOINT_DIR}/Voxtral-Mini-3B).
+
+Note: The model is loaded once and its stage is changed for each test to avoid
+redundant loading operations.
 """
 
 import torch
 import random
 import glob
+import time
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -22,7 +36,7 @@ from model.config import WhiSPAConfig
 from model.whispa import WhiSPAModel
 
 # Constants
-MODEL_ID = "mistralai/Voxtral-Mini-3B-2507"
+CHECKPOINT_PATH = os.path.join(os.getenv("CHECKPOINT_DIR"), "Voxtral-Mini-3B")
 AUDIO_DIR = os.getenv("AUDIO_SAMPLES_DIR")
 BATCH_SIZE = 8
 DEVICE = "cpu"
@@ -45,10 +59,17 @@ def get_audio_files(audio_dir: str, num_files: int = None):
     return sorted(audio_files)
 
 
-def test_with_real_audio():
-    """Test WhiSPA model end-to-end on single and batch audio samples for all stages."""
+def test_with_real_audio_from_checkpoint():
+    """Test WhiSPA model loaded from checkpoint on single and batch audio samples for all stages.
+    
+    Loads a single model instance and tests all stages by changing model.config.stage.
+    """
+    if not os.path.exists(CHECKPOINT_PATH):
+        raise ValueError(f"Checkpoint path does not exist: {CHECKPOINT_PATH}")
+    
     print("=" * 80)
-    print("Testing WhiSPA model with real audio files")
+    print("Testing WhiSPA model loaded from local checkpoint")
+    print(f"Checkpoint path: {CHECKPOINT_PATH}")
     print("=" * 80)
     
     # Get audio files
@@ -69,6 +90,13 @@ def test_with_real_audio():
         print(f"Error loading audio files: {e}")
         return
     
+    print("\nLoading model from checkpoint...")
+    start_time = time.time()
+    model = WhiSPAModel.from_pretrained_local(CHECKPOINT_PATH).eval()
+    elapsed = time.time() - start_time
+    print(f"✅ Model loaded from checkpoint in {elapsed:.3f} seconds")
+    print(f"Initial stage: {model.config.stage}")
+    
     # Test configurations: (audio_input, tag, description)
     test_cases = [
         (single_audio, "single", "Single audio inference"),
@@ -84,17 +112,14 @@ def test_with_real_audio():
         # ENCODE TEST
         print("\n1. Testing encode()")
         print("-" * 40)
-        config_encode = WhiSPAConfig(
-            stage='inference', 
-            backbone_model_id=MODEL_ID, 
-            dtype=torch.bfloat16, 
-            device=DEVICE
-        )
-        model_encode = WhiSPAModel(config_encode).eval()
+        
+        # Set stage to inference for encode
+        model.config.stage = 'inference'
+        print(f"  Set model stage to: {model.config.stage}")
         
         with torch.no_grad():
             try:
-                spectral_embeddings = model_encode.encode(audio_input, language="en")
+                spectral_embeddings = model.encode(audio_input, language="en")
                 print(f"  ✅ encode() successful")
                 print(f"     Output shape: {spectral_embeddings.shape}")
                 print(f"     Dtype: {spectral_embeddings.dtype}")
@@ -118,24 +143,17 @@ def test_with_real_audio():
                 import traceback
                 traceback.print_exc()
         
-        # Clean up
-        del model_encode
-        torch.cuda.empty_cache() if DEVICE == "cuda" else None
-        
         # TRANSCRIBE TEST
         print("\n2. Testing transcribe()")  
         print("-" * 40)
-        config_decode = WhiSPAConfig(
-            stage='inference', 
-            backbone_model_id=MODEL_ID, 
-            dtype=torch.bfloat16, 
-            device=DEVICE
-        )
-        model_decode = WhiSPAModel(config_decode).eval()
+        
+        # Ensure stage is inference for transcribe
+        model.config.stage = 'inference'
+        print(f"  Set model stage to: {model.config.stage}")
         
         with torch.no_grad():
             try:
-                transcriptions = model_decode.transcribe(
+                transcriptions = model.transcribe(
                     audio=audio_input, 
                     language="en", 
                     max_new_tokens=100,  # Reduced for faster testing
@@ -159,24 +177,17 @@ def test_with_real_audio():
                 import traceback
                 traceback.print_exc()
         
-        # Clean up
-        del model_decode
-        torch.cuda.empty_cache() if DEVICE == "cuda" else None
-        
         # TRAIN_DEC TEST
         print("\n3. Testing forward(train_dec)")
         print("-" * 40)
-        config_train_dec = WhiSPAConfig(
-            stage='train_dec', 
-            backbone_model_id=MODEL_ID, 
-            dtype=torch.bfloat16, 
-            device=DEVICE
-        )
-        model_train_dec = WhiSPAModel(config_train_dec).eval()
+        
+        # Set stage to train_dec
+        model.config.stage = 'train_dec'
+        print(f"  Set model stage to: {model.config.stage}")
         
         try:
             # Use model's processor to prepare inputs with spans
-            proc_inputs = model_train_dec.processor(audio_input, language="en")
+            proc_inputs = model.processor(audio_input, language="en")
             spectral_inputs = proc_inputs["spectral_inputs"]
             sample_spans = proc_inputs["sample_spans"]
             input_ids = proc_inputs["text_input_ids"]
@@ -184,7 +195,7 @@ def test_with_real_audio():
             labels = input_ids.clone()
             
             with torch.no_grad():
-                outputs = model_train_dec(
+                outputs = model(
                     spectral_inputs=spectral_inputs,
                     sample_spans=sample_spans,
                     text_input_ids=input_ids,
@@ -194,7 +205,7 @@ def test_with_real_audio():
                 print(f"  ✅ train_dec forward() successful")
                 print(f"     Loss: {outputs.loss.item():.4f}")
                 print(f"     Logits shape: {outputs.logits.shape}")
-                
+
                 # Verify batch size in output
                 expected_batch = len(audio_input) if isinstance(audio_input, list) else 1
                 assert sample_spans.shape[0] == expected_batch, \
@@ -205,37 +216,30 @@ def test_with_real_audio():
             import traceback
             traceback.print_exc()
         
-        # Clean up
-        del model_train_dec
-        torch.cuda.empty_cache() if DEVICE == "cuda" else None
-        
         # TRAIN_ENC TEST
         print("\n4. Testing forward(train_enc)")
         print("-" * 40)
-        config_train_enc = WhiSPAConfig(
-            stage='train_enc', 
-            backbone_model_id=MODEL_ID, 
-            dtype=torch.bfloat16, 
-            device=DEVICE
-        )
-        model_train_enc = WhiSPAModel(config_train_enc).eval()
+        
+        # Set stage to train_enc
+        model.config.stage = 'train_enc'
+        print(f"  Set model stage to: {model.config.stage}")
         
         try:
             # Prepare inputs (reuse from train_dec if available, or create new)
             if 'spectral_inputs' not in locals():
-                proc_inputs = model_train_enc.processor(audio_input, language="en")
+                proc_inputs = model.processor(audio_input, language="en")
                 spectral_inputs = proc_inputs["spectral_inputs"]
                 sample_spans = proc_inputs["sample_spans"]
             
             # Create random target embeddings per sample
             B = sample_spans.shape[0]
-            hidden_size = model_train_enc.voxtral.config.text_config.hidden_size
-            target_audio = torch.randn(B, hidden_size).to(model_train_enc.config.device)
-            target_text = torch.randn(B, hidden_size).to(model_train_enc.config.device)
-            target_psych = torch.randn(B, hidden_size).to(model_train_enc.config.device)
+            hidden_size = model.voxtral.config.text_config.hidden_size
+            target_audio = torch.randn(B, hidden_size).to(model.config.device)
+            target_text = torch.randn(B, hidden_size).to(model.config.device)
+            target_psych = torch.randn(B, hidden_size).to(model.config.device)
             
             with torch.no_grad():
-                out = model_train_enc(
+                out = model(
                     spectral_inputs=spectral_inputs,
                     sample_spans=sample_spans,
                     target_audio_embs=target_audio,
@@ -252,14 +256,14 @@ def test_with_real_audio():
             print(f"  ❌ train_enc forward() failed: {e}")
             import traceback
             traceback.print_exc()
-        
-        # Clean up
-        del model_train_enc
-        torch.cuda.empty_cache() if DEVICE == "cuda" else None
     
     print(f"\n{'=' * 80}")
     print("All tests completed!")
     print(f"{'=' * 80}")
+    
+    # Clean up model
+    del model
+    torch.cuda.empty_cache() if DEVICE == "cuda" else None
 
 
 if __name__ == "__main__":
@@ -268,4 +272,4 @@ if __name__ == "__main__":
     torch.manual_seed(42)
     
     # Run tests
-    test_with_real_audio()
+    test_with_real_audio_from_checkpoint()

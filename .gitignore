@@ -1,7 +1,7 @@
 .env
-/wandb
-/logs
-/loss
+wandb
+logs
+eval/encode/results
 __pycache__
 .vscode
 sandbox.ipynb
