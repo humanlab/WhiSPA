@@ -57,12 +57,11 @@ for name, embedding in audio_embeddings.items():
 
 ## Inference
 
-We have pushed our pretrained model to HuggingFace with the `model_id` [Jarhatz/WhiSPA-V1-Small](https://huggingface.co/Jarhatz/WhiSPA-V1-Small). You can run inference on a directory of audio files or a singular audio file using our audio encoder script.
+We have two model checkpoints on HuggingFace which are [Jarhatz/WhiSPA-V1-Tiny](https://huggingface.co/Jarhatz/WhiSPA-V1-Tiny) and [Jarhatz/WhiSPA-V1-Small](https://huggingface.co/Jarhatz/WhiSPA-V1-Small). Depending on your use-case and compute/memory constraints, use whichever ones. You can run inference on a directory of audio files or a singular audio file using the `encode.py` script.
 
 ```bash
 python inference/encode.py \
 --model_id Jarhatz/WhiSPA-V1-Small \
---hf_token $HUGGINGFACE_HUB_TOKEN \
 --audio_path <AUDIO_FILE_PATH or AUDIO_DIR_PATH> \
 --output_path <OUTPUT_DIR_PATH> \
 --device cuda
