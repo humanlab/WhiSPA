@@ -14,8 +14,6 @@ __pycache__
 *.csv
 *.tsv
 *.json
-*.yaml
-*.yml
 *.xml
 *.pickle
 *.pkl
