@@ -1,8 +1,8 @@
 # WhiSPA: Whisper Semantically and Psychologically Aligned
 
-<img src="visuals/WhiSPA_Spirit_Figure.jpg" alt="WhiSPA Spirit Figure" width="50%"/>
+<img src="visuals/WhiSPA_Spirit_Figure.jpg" alt="WhiSPA Spirit Figure" width="75%"/>
 
-This is the code repository for the [WhiSPA paper](https://arxiv.org/abs/2501.16344).
+This is the code repository for the [WhiSPA paper](https://aclanthology.org/2025.acl-long.1098.pdf).
 
 ## Table of Contents
 
@@ -55,11 +55,11 @@ WhiSPA is trained using a student-teacher contrastive alignment approach. The Wh
 
 ## Inference
 
-We have pushed our pretrained model to HuggingFace with the `model_id` [Jarhatz/whispa_394_v1](https://huggingface.co/Jarhatz/whispa_394_v1). You can run inference on a directory of audio files or a singular audio file using our audio encoder script.
+We have pushed our pretrained model to HuggingFace with the `model_id` [Jarhatz/WhiSPA-V1-Small](https://huggingface.co/Jarhatz/WhiSPA-V1-Small). You can run inference on a directory of audio files or a singular audio file using our audio encoder script.
 
 ```bash
-python inference/encode_audio.py \
---model_id Jarhatz/whispa_394_v1 \
+python inference/encode.py \
+--model_id Jarhatz/WhiSPA-V1-Small \
 --hf_token $HUGGINGFACE_HUB_TOKEN \
 --audio_path <AUDIO_FILE_PATH or AUDIO_DIR_PATH> \
 --output_path <OUTPUT_DIR_PATH> \
