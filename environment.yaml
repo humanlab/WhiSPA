@@ -148,4 +148,3 @@ dependencies:
       - urllib3==2.5.0
       - wandb==0.21.1
       - xxhash==3.5.0
-prefix: /path/to/miniconda3/envs/whispa # TODO: change this to your conda env path

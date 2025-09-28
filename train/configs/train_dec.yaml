@@ -1,0 +1,33 @@
+model:
+  backbone_model_id: mistralai/Voxtral-Mini-3B-2507
+  stage: train_dec
+  loss: MMRL
+  dtype: bfloat16
+  device: cuda
+
+train:
+  batch_size: 16
+  epochs: 1
+  learning_rate: 5.0e-5
+  weight_decay: 1.0e-2
+  mixed_precision: bf16
+  gradient_accumulation_steps: 1
+  val_ratio: 0.05
+  checkpoint_every_steps: 5000
+  validate_every_steps: 20000
+  val_max_batches: 200
+  last_k_checkpoints: 3
+
+logging:
+  log_with: wandb
+  project: whispa
+  entity: inflection
+  run_name: whispa-dec-3b
+  tags: [dec, mini3b]
+  notes: Decoder LM training (Voxtral LM fine-tune)
+
+scheduler:
+  type: cosine
+  warmup_ratio: 0.05
+  warmup_steps: 0
+

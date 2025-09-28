@@ -15,8 +15,6 @@ sandbox.ipynb
 *.csv
 *.tsv
 *.json
-*.yaml
-*.yml
 *.xml
 *.pickle
 *.pkl

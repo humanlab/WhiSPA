@@ -6,7 +6,7 @@ Supports multi-GPU inference using HuggingFace Accelerate for efficient batch pr
 
 import sys, os
 # Add the root directory of the project to the Python path
-BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if BASE_DIR not in sys.path:
     sys.path.append(BASE_DIR)
 
@@ -15,16 +15,16 @@ import json
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 import logging
+import warnings
 from tqdm import tqdm
 import numpy as np
 import torch
 from torch.utils.data import Dataset, DataLoader
+from transformers.models.voxtral.processing_voxtral import VoxtralProcessor
+from transformers.models.voxtral.modeling_voxtral import VoxtralForConditionalGeneration
 from accelerate import Accelerator, DistributedDataParallelKwargs
 from accelerate.utils import set_seed, broadcast_object_list, gather_object
-import warnings
-warnings.filterwarnings("ignore")
 
-from model.config import WhiSPAConfig
 from model.whispa import WhiSPAModel
 
 # Set up logging
@@ -33,27 +33,27 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+warnings.filterwarnings("ignore")
 
 
 """
 Example usage:
-accelerate launch --num_processes 8 --mixed_precision fp16 data/gigaspeech/voxtral.py \
-    --model_id mistralai/Voxtral-Mini-3B-2507 \
-    --dataset_path /mnt/vast/data/speech/gigaspeech/data/data/gigaspeech_clean.jsonl \
+accelerate launch --num_processes 8 --mixed_precision fp16 data/voxtral.py \
+    --model_path /mnt/vast/share/checkpoints/rajath-cmd/WhiSPA/Voxtral-Mini-3B \
+    --dataset_path /mnt/vast/data/speech/gigaspeech/data/data/dataset_clean.jsonl \
     --embedding_dir /mnt/vast/data/speech/gigaspeech/data/data/vox_3072_audio \
-    --output_path /mnt/vast/data/speech/gigaspeech/data/data/gigaspeech_clean_vox_3072_audio.jsonl \
+    --output_path /mnt/vast/data/speech/gigaspeech/data/data/dataset_clean.vox_3072_audio.jsonl \
     --batch_size 32 \
     --num_workers 128 \
-    --language en
-
-accelerate launch --num_processes 8 --mixed_precision fp16 data/gigaspeech/voxtral.py \
-    --model_id mistralai/Voxtral-Small-24B-2507 \
-    --dataset_path /mnt/vast/data/speech/gigaspeech/data/data/gigaspeech_clean.jsonl \
+    --overwrite_files \
+&& accelerate launch --num_processes 8 --mixed_precision fp16 data/voxtral.py \
+    --model_path /mnt/vast/share/checkpoints/rajath-cmd/WhiSPA/Voxtral-Small-24B \
+    --dataset_path /mnt/vast/data/speech/gigaspeech/data/data/dataset_clean.vox_3072_audio.jsonl \
     --embedding_dir /mnt/vast/data/speech/gigaspeech/data/data/vox_5120_audio \
-    --output_path /mnt/vast/data/speech/gigaspeech/data/data/gigaspeech_clean_vox_5120_audio.jsonl \
+    --output_path /mnt/vast/data/speech/gigaspeech/data/data/dataset_clean.vox_5120_audio.jsonl \
     --batch_size 32 \
     --num_workers 128 \
-    --language en
+    --overwrite_files
 """
 
 
@@ -74,13 +74,13 @@ class AudioDataset(Dataset):
         with open(dataset_path, 'r', encoding='utf-8') as f:
             for line in f:
                 sample = json.loads(line.strip())
-                if 'index' in sample and 'path' in sample:
+                if 'index' in sample and 'audio' in sample:
                     if sample['index'] not in processed_indices:
                         # Check if audio file exists
-                        if os.path.exists(sample['path']):
+                        if os.path.exists(sample['audio']):
                             self.samples.append(sample)
                         else:
-                            logger.warning(f"Audio file not found: {sample['path']}")
+                            logger.warning(f"Audio file not found: {sample['audio']}")
                 else:
                     logger.warning(f"Skipping sample without required fields: {sample}")
         
@@ -93,7 +93,7 @@ class AudioDataset(Dataset):
         sample = self.samples[idx]
         return {
             'index': sample['index'],
-            'audio_path': sample['path'],
+            'audio': sample['audio'],
             'original_data': sample  # Keep all original fields
         }
 
@@ -101,12 +101,12 @@ class AudioDataset(Dataset):
 def collate_fn(batch: List[Dict[str, Any]]) -> Dict[str, Any]:
     """Custom collate function for batching."""
     indices = [item['index'] for item in batch]
-    audio_paths = [item['audio_path'] for item in batch]
+    audio_paths = [item['audio'] for item in batch]
     original_data = [item['original_data'] for item in batch]
     
     return {
         'indices': indices,
-        'audio_paths': audio_paths,
+        'audios': audio_paths,
         'original_data': original_data
     }
 
@@ -114,17 +114,17 @@ def collate_fn(batch: List[Dict[str, Any]]) -> Dict[str, Any]:
 class VoxtralEncoder:
     """Class to handle Voxtral audio encoding with Accelerate multi-GPU support."""
     
-    def __init__(self, model_id: str, accelerator: Accelerator, language: str = "en", dtype: torch.dtype = None):
+    def __init__(self, model_path: str, accelerator: Accelerator, language: str = "en", dtype: torch.dtype = None):
         """
         Initialize the Voxtral encoder.
         
         Args:
-            model_id: HuggingFace model ID for the backbone model
+            model_path: Local filesystem path to the WhiSPA checkpoint directory
             accelerator: Accelerator instance for distributed processing
             language: Language code for encoding
             dtype: Model dtype (default: based on mixed precision setting)
         """
-        self.model_id = model_id
+        self.model_path = model_path
         self.accelerator = accelerator
         self.language = language
         
@@ -137,17 +137,33 @@ class VoxtralEncoder:
             else:
                 dtype = torch.float32
         
-        # Initialize Voxtral config and model
-        logger.info(f"Loading Voxtral model with backbone: {model_id}")
-        self.config = WhiSPAConfig(
-            stage='inference',
-            backbone_model_id=model_id,
-            dtype=dtype,
-            device=accelerator.device
-        )
-        
-        self.model = WhiSPAModel(self.config)
-        self.model.eval()
+        # Pre-cache Voxtral assets (processor and backbone) on main process so all ranks can load from cache
+        try:
+            cfg_path = os.path.join(model_path, "config.json")
+            with open(cfg_path, "r", encoding="utf-8") as f:
+                cfg_dict = json.load(f)
+            backbone_model_id = cfg_dict.get("backbone_model_id")
+            if not backbone_model_id:
+                raise ValueError("`backbone_model_id` not found in config.json")
+            if accelerator.is_main_process:
+                logger.info(f"Pre-caching Voxtral assets for backbone: {backbone_model_id}")
+                # Ensure processor and model weights are present in the local HF cache
+                VoxtralProcessor.from_pretrained(backbone_model_id)
+                VoxtralForConditionalGeneration.from_pretrained(backbone_model_id)
+            accelerator.wait_for_everyone()
+        except Exception as e:
+            if accelerator.is_main_process:
+                logger.warning(f"Could not pre-cache Voxtral assets: {e}")
+            accelerator.wait_for_everyone()
+
+        # Load WhiSPA model from local checkpoint
+        logger.info(f"Loading WhiSPA model from local path: {model_path}")
+        self.model = WhiSPAModel.from_pretrained_local(model_path).eval()
+        self.model.to(device=accelerator.device, dtype=dtype)
+        # Ensure inference stage
+        if hasattr(self.model, 'config'):
+            self.model.config.stage = 'inference'
+            self.model.config.device = accelerator.device
         
         logger.info(f"Model loaded successfully on device: {accelerator.device}")
         logger.info(f"Using dtype: {dtype}")
@@ -174,7 +190,7 @@ class VoxtralEncoder:
 
 def process_dataset(
     dataset_path: str,
-    model_id: str,
+    model_path: str,
     embedding_dir: str,
     output_path: str,
     batch_size: int,
@@ -190,7 +206,7 @@ def process_dataset(
     
     Args:
         dataset_path: Path to input JSONL file with audio paths
-        model_id: HuggingFace model ID for backbone model
+        model_path: Local filesystem path to the WhiSPA checkpoint directory
         embedding_dir: Directory to save embedding files
         output_path: Path to output JSONL file
         batch_size: Batch size per GPU for processing
@@ -224,7 +240,11 @@ def process_dataset(
     # Check for existing processed samples (only on main process)
     processed_indices = set()
     if accelerator.is_main_process:
-        if not overwrite_files and os.path.exists(output_path):
+        if overwrite_files:
+            logger.info(f"Force reprocess enabled, will overwrite all embeddings")
+            if os.path.exists(output_path):
+                logger.info(f"Will overwrite existing output file: {output_path}")
+        elif os.path.exists(output_path):
             logger.info(f"Found existing output file: {output_path}")
             logger.info("Reading already processed samples...")
             with open(output_path, 'r', encoding='utf-8') as f:
@@ -236,8 +256,6 @@ def process_dataset(
                     except json.JSONDecodeError:
                         continue
             logger.info(f"Found {len(processed_indices)} already processed samples")
-        elif overwrite_files and os.path.exists(output_path):
-            logger.info(f"Force reprocess enabled, overwriting {output_path}")
     
     # Wait for main process to read the file
     accelerator.wait_for_everyone()
@@ -252,6 +270,7 @@ def process_dataset(
     objects = [processed_indices_list]
     broadcast_object_list(objects, from_process=0)
     processed_indices = set(objects[0])
+        
     # Initialize dataset
     logger.info("Loading dataset...")
     dataset = AudioDataset(dataset_path, processed_indices)
@@ -280,7 +299,7 @@ def process_dataset(
     model_dtype = dtype_map.get(dtype, None)
     
     # Initialize Voxtral encoder
-    encoder = VoxtralEncoder(model_id, accelerator, language, dtype=model_dtype)
+    encoder = VoxtralEncoder(model_path, accelerator, language, dtype=model_dtype)
     
     dataloader = accelerator.prepare(dataloader)
     
@@ -321,10 +340,9 @@ def process_dataset(
     
     for batch_idx, batch in enumerate(dataloader):
         indices = batch['indices']
-        audio_paths = batch['audio_paths']
+        audio_paths = batch['audios']
         original_data = batch['original_data']
         
-        # try:
         # Encode audio batch - returns (batch_size, hidden_dim)
         embeddings = encoder.encode_batch(audio_paths)
         
@@ -338,8 +356,8 @@ def process_dataset(
             emb_filename = f"vox_{idx:09d}.npy"
             emb_filepath = os.path.join(embedding_dir, emb_filename)
             
-            # Check if embedding already exists
-            if not os.path.exists(emb_filepath):
+            # Check if embedding already exists (skip check if overwrite_files is True)
+            if overwrite_files or not os.path.exists(emb_filepath):
                 # Save embedding
                 np.save(emb_filepath, emb)
             
@@ -347,16 +365,6 @@ def process_dataset(
             output_sample = orig_data.copy()
             output_sample[attribute_name] = emb_filepath
             batch_results.append(output_sample)
-        
-        # except Exception as e:
-        #     logger.error(f"Error processing batch: {e}")
-        #     # Still add entries but with error flag
-        #     batch_results = []
-        #     for idx, orig_data in zip(indices, original_data):
-        #         output_sample = orig_data.copy()
-        #         output_sample[attribute_name] = None
-        #         output_sample["error"] = str(e)
-        #         batch_results.append(output_sample)
         
         batch_results_buffer.extend(batch_results)
         
@@ -446,10 +454,10 @@ def main():
     )
     
     parser.add_argument(
-        "--model_id",
+        "--model_path",
         type=str,
-        default="mistralai/Voxtral-Mini-3B-2507",
-        help="HuggingFace model ID for the backbone model (default: mistralai/Voxtral-Mini-3B-2507)"
+        required=True,
+        help="Path to the local WhiSPA checkpoint directory"
     )
     
     parser.add_argument(
@@ -528,13 +536,15 @@ def main():
     # Validate paths
     if not os.path.exists(args.dataset_path):
         raise FileNotFoundError(f"Dataset file not found: {args.dataset_path}")
+    if not os.path.isdir(args.model_path):
+        raise FileNotFoundError(f"Model directory not found: {args.model_path}")
     
     # Set seed for reproducibility
     set_seed(args.seed)
     
     # Log configuration (only from main process, handled by accelerate)
     logger.info("Configuration:")
-    logger.info(f"  Model ID: {args.model_id}")
+    logger.info(f"  Model path: {args.model_path}")
     logger.info(f"  Dataset path: {args.dataset_path}")
     logger.info(f"  Embedding directory: {args.embedding_dir}")
     logger.info(f"  Output path: {args.output_path}")
@@ -555,7 +565,7 @@ def main():
     # Process the dataset
     process_dataset(
         dataset_path=args.dataset_path,
-        model_id=args.model_id,
+        model_path=args.model_path,
         embedding_dir=args.embedding_dir,
         output_path=args.output_path,
         batch_size=args.batch_size,

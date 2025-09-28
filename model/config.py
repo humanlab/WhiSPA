@@ -7,10 +7,7 @@ class WhiSPAConfig():
     def __init__(
         self,
         backbone_model_id: str = 'mistralai/Voxtral-Mini-3B-2507',
-        # language_model_id: str = 'Qwen/Qwen3-Embedding-0.6B',
-        # audio_model_id: str = 'openai/whisper-medium',
-        # use_teacher_cache: bool = True,
-        stage: str = 'encode',
+        stage: str = 'inference',
         pooling_mode: str = 'mean',
         hidden_size: int = 1024,
         n_mel_bins: int = 80,
@@ -18,10 +15,8 @@ class WhiSPAConfig():
         # spectral_decoder_n_layers: int = 6,
         # spectral_decoder_n_heads: int = 8,
         # spectral_decoder_ffn_dim: int = 4096,
-        loss: str = 'NMRL',
+        loss: str = 'MMRL',
         dtype: torch.dtype = torch.bfloat16,
-        # alpha: float = 0.5, # Trinary Alignment Loss
-        # beta: float = 0.5, # Trinary Alignment Loss
         tau: float = 0.1, # Temperature for NCE
         batch_size: int = 1,
         num_workers: int = 1,
@@ -38,10 +33,6 @@ class WhiSPAConfig():
             raise ValueError(f"Invalid backbone model: `{backbone_model_id}`. Must be one of [{backbones}].")
         self.backbone_model_id = backbone_model_id
 
-        # self.language_model_id = language_model_id
-        # self.audio_teacher_id = audio_teacher_id
-        # self.use_teacher_cache = use_teacher_cache
-        
         stages = {'train_enc', 'train_dec', 'inference'}
         if stage not in stages:
             raise ValueError(f"Invalid stage: `{stage}`. Must be one of [{stages}].")
@@ -55,11 +46,12 @@ class WhiSPAConfig():
         # self.spectral_decoder_n_layers = spectral_decoder_n_layers
         # self.spectral_decoder_n_heads = spectral_decoder_n_heads
         # self.spectral_decoder_ffn_dim = spectral_decoder_ffn_dim
-        losses = {'NMRL', 'TAL'}
+
         """ 
-        - NMRL: Nested Matryoshka Representation Loss
+        - MMRL: Manifolded Matryoshka Representation Loss
         - TAL: Trinary Alignment Loss
         """
+        losses = {'MMRL', 'TAL'}
         if loss not in losses:
             raise ValueError(f"Invalid loss: `{loss}`. Must be one of [{losses}].")
         self.loss = loss
@@ -99,6 +91,8 @@ class WhiSPAConfig():
         # Convert non-JSON-serializable fields (e.g., torch.dtype) to strings
         if isinstance(cfg.get("dtype"), torch.dtype):
             cfg["dtype"] = str(cfg["dtype"])
+        if isinstance(cfg.get("device"), torch.device):
+            cfg["device"] = str(cfg["device"])
         
         with open(config_path, "w", encoding="utf-8") as f:
             json.dump(cfg, f, indent=2)
@@ -117,6 +111,20 @@ class WhiSPAConfig():
                 torch_dtype_name = dtype_val.split(".", 1)[1]
                 if hasattr(torch, torch_dtype_name):
                     config_dict["dtype"] = getattr(torch, torch_dtype_name)
+                else:
+                    config_dict["dtype"] = torch.bfloat16
+            except Exception:
+                pass
+
+        # Restore torch.device if serialized as string
+        device_val = config_dict.get("device")
+        if isinstance(device_val, str) and device_val.startswith("torch."):
+            try:
+                torch_device_name = device_val.split(".", 1)[1]
+                if hasattr(torch, torch_device_name):
+                    config_dict["device"] = getattr(torch, torch_device_name)
+                else:
+                    config_dict["device"] = torch.device("cpu")
             except Exception:
                 pass
         return cls(**config_dict)

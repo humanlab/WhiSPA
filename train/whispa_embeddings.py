@@ -41,7 +41,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from train.utils import mean_token_pool, last_token_pool
+from data.utils import mean_token_pool, last_token_pool
 from threading import Lock
 
 

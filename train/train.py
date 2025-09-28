@@ -1,0 +1,693 @@
+#!/usr/bin/env python3
+
+import sys, os
+# Add the root directory of the project to the Python path
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+if BASE_DIR not in sys.path:
+    sys.path.append(BASE_DIR)
+
+import argparse
+import math
+import logging
+from typing import Any, Dict, List, Optional, Tuple
+
+import yaml
+import wandb
+import time
+import numpy as np
+import torch
+from torch.utils.data import DataLoader, Dataset, Subset, ConcatDataset, random_split
+from accelerate import Accelerator, DistributedDataParallelKwargs
+from accelerate.utils import set_seed
+from transformers import get_cosine_schedule_with_warmup
+from tqdm import tqdm
+import shutil
+
+
+from model.config import WhiSPAConfig
+from model.whispa import WhiSPAModel
+from data.peoplespeech.dataset import PeopleSpeechDataset
+from data.gigaspeech.dataset import GigaSpeechDataset
+
+
+def parse_args() -> argparse.Namespace:
+    p = argparse.ArgumentParser(description="Accelerate-powered training for WhiSPA")
+
+    # Core config
+    p.add_argument("--config_yaml", required=True, type=str, help="Path to YAML to build WhiSPAConfig and training params")
+    p.add_argument("--datasets", nargs='*', choices=["gigaspeech", "peoplespeech"], default=None, help="Datasets to use; default is both if none provided")
+    p.add_argument("--stage", required=False, choices=["train_enc", "train_dec"], help="Override stage (else taken from YAML)")
+    p.add_argument("--language", default="en", type=str, help="Language code for processor")
+
+    # Teacher embedding keys for train_enc
+    p.add_argument("--audio_emb_key", default=None, type=str, help="Key in JSONL with path to acoustic teacher embedding .npy")
+    p.add_argument("--text_emb_key", default=None, type=str, help="Key in JSONL with path to semantic/text teacher embedding .npy")
+    p.add_argument("--psych_emb_key", default=None, type=str, help="Key in JSONL with path to affective/psych teacher embedding .npy")
+
+    # Data and training hyper-params (can be overridden by YAML)
+    p.add_argument("--batch_size", type=int, default=16)
+    p.add_argument("--num_workers", type=int, default=0, help="PyTorch DataLoader workers; 0 recommended (processor in collate)")
+    p.add_argument("--epochs", type=int, default=1)
+    p.add_argument("--lr", type=float, default=1.0e-4)
+    p.add_argument("--weight_decay", type=float, default=1.0e-2)
+    p.add_argument("--gradient_accumulation_steps", type=int, default=1)
+    p.add_argument("--val_ratio", type=float, default=0.05, help="Fraction of data for validation")
+    # Cadence controls
+    p.add_argument("--checkpoint_every_steps", type=int, default=5000, help="Save checkpoint every N steps (default via YAML or 5000)")
+    p.add_argument("--validate_every_steps", type=int, default=20000, help="Run partial validation every N steps (default via YAML or 20000)")
+    p.add_argument("--val_max_batches", type=int, default=200, help="Max val batches for step-cadence validation (default 200)")
+    p.add_argument("--last_k_checkpoints", type=int, default=3, help="Keep only last K step checkpoints (default 3)")
+    p.add_argument("--seed", type=int, default=42)
+
+    # Mixed precision
+    p.add_argument("--mixed_precision", choices=["no", "fp16", "bf16"], default=None, help="Accelerate mixed-precision override")
+
+    # Resume
+    p.add_argument("--resume_from", type=str, default=None, help="Path to an existing checkpoint directory to resume from (accelerate state)")
+
+    return p.parse_args()
+
+
+def load_yaml(path: str) -> Dict[str, Any]:
+    with open(path, "r", encoding="utf-8") as f:
+        return yaml.safe_load(f)
+
+
+def build_config(yaml_cfg: Dict[str, Any], cli: argparse.Namespace) -> Tuple[WhiSPAConfig, Dict[str, Any]]:
+    """
+    Build WhiSPAConfig and training params from YAML and CLI overrides.
+    YAML structure example:
+      model:
+        backbone_model_id: mistralai/Voxtral-Mini-3B-2507
+        stage: train_enc
+        dtype: torch.bfloat16
+        device: cuda
+        loss: MMRL
+      train:
+        batch_size: 8
+        epochs: 3
+        lr: 1e-4
+        weight_decay: 1e-2
+        mixed_precision: bf16
+    """
+    model_cfg = dict(yaml_cfg.get("model", {}))
+    train_cfg = dict(yaml_cfg.get("train", {}))
+    log_cfg = dict(yaml_cfg.get("logging", {}))
+    sched_cfg = dict(yaml_cfg.get("scheduler", {}))
+
+    # CLI overrides only if not present in YAML (YAML takes precedence)
+    if ("stage" not in model_cfg or model_cfg.get("stage") is None) and cli.stage is not None:
+        model_cfg["stage"] = cli.stage
+    if "batch_size" not in train_cfg and cli.batch_size is not None:
+        train_cfg["batch_size"] = cli.batch_size
+    if "epochs" not in train_cfg and cli.epochs is not None:
+        train_cfg["epochs"] = cli.epochs
+    if "learning_rate" not in train_cfg and cli.lr is not None:
+        train_cfg["learning_rate"] = cli.lr
+    if "weight_decay" not in train_cfg and cli.weight_decay is not None:
+        train_cfg["weight_decay"] = cli.weight_decay
+    if "mixed_precision" not in train_cfg and cli.mixed_precision is not None:
+        train_cfg["mixed_precision"] = cli.mixed_precision
+    if "gradient_accumulation_steps" not in train_cfg and cli.gradient_accumulation_steps is not None:
+        train_cfg["gradient_accumulation_steps"] = cli.gradient_accumulation_steps
+    if "val_ratio" not in train_cfg and cli.val_ratio is not None:
+        train_cfg["val_ratio"] = cli.val_ratio
+
+    # Normalize dtype field if given as string (e.g., "float32", "bfloat16")
+    dtype_map = {
+        "float32": torch.float32,
+        "fp32": torch.float32,
+        "torch.float32": torch.float32,
+        "float16": torch.float16,
+        "fp16": torch.float16,
+        "torch.float16": torch.float16,
+        "bfloat16": torch.bfloat16,
+        "bf16": torch.bfloat16,
+        "torch.bfloat16": torch.bfloat16,
+        None: torch.bfloat16,
+    }
+    dt_in = model_cfg.get("dtype", None)
+    if isinstance(dt_in, str):
+        model_cfg["dtype"] = dtype_map.get(dt_in, torch.bfloat16)
+
+    # Default device
+    model_cfg.setdefault("device", "cuda" if torch.cuda.is_available() else "cpu")
+
+    # Build model config (extra keys are stored automatically)
+    cfg = WhiSPAConfig(**model_cfg)
+
+    # Training params with defaults
+    train_params = {
+        "batch_size": int(train_cfg.get("batch_size", cli.batch_size)),
+        "epochs": int(train_cfg.get("epochs", cli.epochs)),
+        "learning_rate": float(train_cfg.get("learning_rate", cli.lr)),
+        "weight_decay": float(train_cfg.get("weight_decay", cli.weight_decay)),
+        "mixed_precision": str(train_cfg.get("mixed_precision", "bf16" if cfg.dtype == torch.bfloat16 else ("fp16" if cfg.dtype == torch.float16 else "no"))),
+        "gradient_accumulation_steps": int(train_cfg.get("gradient_accumulation_steps", cli.gradient_accumulation_steps)),
+        "gradient_clipping": float(train_cfg.get("gradient_clipping", 0.0)),
+        "val_ratio": float(train_cfg.get("val_ratio", cli.val_ratio)),
+        # Cadence defaults for large datasets (~10M samples) with YAML precedence
+        "checkpoint_every_steps": int(train_cfg.get("checkpoint_every_steps", cli.checkpoint_every_steps)),
+        "validate_every_steps": int(train_cfg.get("validate_every_steps", cli.validate_every_steps)),
+        "val_max_batches": int(train_cfg.get("val_max_batches", cli.val_max_batches)),
+        "last_k_checkpoints": int(train_cfg.get("last_k_checkpoints", cli.last_k_checkpoints)),
+        "logging": {
+            "log_with": log_cfg.get("log_with", "wandb"),
+            "project": log_cfg.get("project", "WhiSPA"),
+            "entity": log_cfg.get("entity", None),
+            "run_name": log_cfg.get("run_name", None),
+            "tags": log_cfg.get("tags", None),
+            "notes": log_cfg.get("notes", None),
+        },
+        "scheduler": {
+            "type": sched_cfg.get("type", "cosine"),
+            "warmup_ratio": float(sched_cfg.get("warmup_ratio", 0.0)),
+            "warmup_steps": int(sched_cfg.get("warmup_steps", 0)),
+        },
+    }
+    return cfg, train_params
+
+
+def choose_datasets(names: Optional[List[str]]) -> tuple[Dataset, Dict[str, int]]:
+    if not names:
+        names = ["gigaspeech", "peoplespeech"]
+    ds_list: List[Dataset] = []
+    sizes: Dict[str, int] = {}
+    for name in names:
+        if name == "gigaspeech":
+            d = GigaSpeechDataset()
+            ds_list.append(d)
+            sizes["gigaspeech"] = len(d)
+        elif name == "peoplespeech":
+            d = PeopleSpeechDataset()
+            ds_list.append(d)
+            sizes["peoplespeech"] = len(d)
+        else:
+            raise ValueError(f"Unknown dataset: {name}")
+    if len(ds_list) == 1:
+        return ds_list[0], sizes
+    return ConcatDataset(ds_list), sizes
+
+
+def split_dataset(ds: Dataset, val_ratio: float, seed: int) -> Tuple[Subset, Optional[Subset]]:
+    n = len(ds)
+    if val_ratio <= 0.0:
+        return Subset(ds, list(range(n))), None
+    val_size = max(1, int(n * val_ratio))
+    train_size = n - val_size
+    generator = torch.Generator().manual_seed(seed)
+    train_subset, val_subset = random_split(ds, [train_size, val_size], generator=generator)
+    return train_subset, val_subset
+
+
+def load_teacher_batch(batch: List[Dict[str, Any]], audio_key: str, text_key: str, psych_key: str, device: torch.device, dtype: torch.dtype) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """
+    Load .npy embeddings for teacher targets for train_enc stage.
+    """
+    def _load_one(path: Optional[str]) -> Optional[np.ndarray]:
+        if path is None:
+            return None
+        try:
+            return np.load(path)
+        except Exception:
+            return None
+
+    audio_list = []
+    text_list = []
+    psych_list = []
+    for sample in batch:
+        a = _load_one(sample.get(audio_key)) if audio_key else None
+        t = _load_one(sample.get(text_key)) if text_key else None
+        p = _load_one(sample.get(psych_key)) if psych_key else None
+        if a is None or t is None or p is None:
+            raise RuntimeError("Missing teacher embeddings for train_enc stage; ensure *_emb_key CLI args match JSONL attributes and files exist")
+        audio_list.append(torch.from_numpy(a))
+        text_list.append(torch.from_numpy(t))
+        psych_list.append(torch.from_numpy(p))
+
+    audio = torch.stack(audio_list, dim=0).to(device=device, dtype=dtype)
+    text = torch.stack(text_list, dim=0).to(device=device, dtype=dtype)
+    psych = torch.stack(psych_list, dim=0).to(device=device, dtype=dtype)
+    return audio, text, psych
+
+
+def make_collate_for_stage(model: WhiSPAModel, stage: str, language: str, emb_keys: Tuple[Optional[str], Optional[str], Optional[str]]):
+    processor = model.processor
+    device = model.config.device
+    dtype = model.config.dtype
+
+    def collate(batch: List[Dict[str, Any]]) -> Dict[str, Any]:
+        # Collect audio paths
+        audio_paths = [s["audio"] for s in batch]
+        # Use WhiSPAProcessor to build inputs; runs on CPU and moves to correct device in processor
+        inputs = processor(audio_paths, language=language)
+
+        if stage == "train_dec":
+            # Labels default to the same as text_input_ids for LM training
+            labels = inputs["text_input_ids"].clone()
+            return {
+                "spectral_inputs": inputs["spectral_inputs"],
+                "sample_spans": inputs["sample_spans"],
+                "text_input_ids": inputs["text_input_ids"],
+                "text_attention_mask": inputs["text_attention_mask"],
+                "text_labels": labels,
+            }
+        elif stage == "train_enc":
+            audio_key, text_key, psych_key = emb_keys
+            a, t, p = load_teacher_batch(batch, audio_key, text_key, psych_key, device, dtype)
+            return {
+                "spectral_inputs": inputs["spectral_inputs"],
+                "sample_spans": inputs["sample_spans"],
+                "target_audio_embs": a,
+                "target_text_embs": t,
+                "target_psych_embs": p,
+            }
+        else:
+            raise ValueError(f"Unsupported stage for training: {stage}")
+
+    return collate
+
+
+def create_optimizer(model: WhiSPAModel, lr: float, weight_decay: float) -> torch.optim.Optimizer:
+    params = [p for p in model.parameters() if p.requires_grad]
+    if len(params) == 0:
+        raise RuntimeError("No trainable parameters found; ensure stage is correct and components are unfrozen as intended")
+    return torch.optim.AdamW(params, lr=lr, weight_decay=weight_decay)
+
+
+def save_checkpoint(model: WhiSPAModel, optimizer: torch.optim.Optimizer, epoch: int, global_step: int, output_dir: str, tag: str = "last") -> None:
+    os.makedirs(output_dir, exist_ok=True)
+    # Save model weights/config via provided API
+    model.save_pretrained_local(output_dir, safe_serialization=True)
+    # Save optimizer and trainer state
+    torch.save({
+        "epoch": epoch,
+        "global_step": global_step,
+        "optimizer": optimizer.state_dict(),
+    }, os.path.join(output_dir, f"trainer_state.{tag}.pt"))
+
+
+def save_rotating_checkpoint(
+    accelerator: Accelerator,
+    model: WhiSPAModel,
+    optimizer: torch.optim.Optimizer,
+    epoch: int,
+    global_step: int,
+    base_dir: str,
+    keep_last_k: int,
+) -> None:
+    os.makedirs(base_dir, exist_ok=True)
+    ckpt_dir = os.path.join(base_dir, f"step-{global_step}")
+    os.makedirs(ckpt_dir, exist_ok=True)
+    # Save model weights/config
+    model.save_pretrained_local(ckpt_dir, safe_serialization=True)
+    # Save trainer state
+    torch.save({
+        "epoch": epoch,
+        "global_step": global_step,
+        "optimizer": optimizer.state_dict(),
+    }, os.path.join(ckpt_dir, "trainer_state.pt"))
+    # Save accelerator state (includes RNG, optimizer, scheduler, etc.)
+    try:
+        accelerator.save_state(ckpt_dir)
+    except Exception as e:
+        if accelerator.is_main_process:
+            logging.warning(f"Failed to save accelerator state at {ckpt_dir}: {e}")
+    # Update latest pointer
+    with open(os.path.join(base_dir, "LATEST"), "w", encoding="utf-8") as f:
+        f.write(str(global_step))
+    # Rotate old checkpoints
+    subdirs = [d for d in os.listdir(base_dir) if d.startswith("step-") and os.path.isdir(os.path.join(base_dir, d))]
+    # Sort by step number
+    def _step_from_name(n: str) -> int:
+        try:
+            return int(n.split("-", 1)[1])
+        except Exception:
+            return -1
+    subdirs.sort(key=_step_from_name)
+    if len(subdirs) > keep_last_k:
+        to_delete = subdirs[: len(subdirs) - keep_last_k]
+        for d in to_delete:
+            full = os.path.join(base_dir, d)
+            try:
+                shutil.rmtree(full)
+            except Exception as e:
+                if accelerator.is_main_process:
+                    logging.warning(f"Failed to delete old checkpoint {full}: {e}")
+
+
+def load_resume(model: WhiSPAModel, optimizer: torch.optim.Optimizer, resume_dir: str) -> Tuple[int, int]:
+    state_path = os.path.join(resume_dir, "trainer_state.last.pt")
+    if not os.path.exists(state_path):
+        # Also try any trainer_state.*.pt
+        candidates = [os.path.join(resume_dir, f) for f in os.listdir(resume_dir) if f.startswith("trainer_state.") and f.endswith(".pt")]
+        state_path = candidates[0] if candidates else None
+    if state_path and os.path.exists(state_path):
+        state = torch.load(state_path, map_location="cpu")
+        optimizer.load_state_dict(state.get("optimizer", {}))
+        return int(state.get("epoch", 0)), int(state.get("global_step", 0))
+    return 0, 0
+
+
+def train_loop(
+    accelerator: Accelerator,
+    model: WhiSPAModel,
+    train_loader: DataLoader,
+    val_loader: Optional[DataLoader],
+    optimizer: torch.optim.Optimizer,
+    scheduler: Optional[torch.optim.lr_scheduler._LRScheduler],
+    stage: str,
+    epochs: int,
+    grad_accum: int,
+    output_dir: str,
+    resume_dir: Optional[str] = None,
+    start_epoch: int = 0,
+) -> None:
+    # Prepare for accelerate
+    if scheduler is not None:
+        model, optimizer, train_loader, val_loader, scheduler = accelerator.prepare(model, optimizer, train_loader, val_loader, scheduler)
+    else:
+        model, optimizer, train_loader, val_loader = accelerator.prepare(model, optimizer, train_loader, val_loader)
+
+    # Load full accelerator state (optimizer/scheduler/rng/dataloader) if provided
+    if resume_dir is not None and os.path.isdir(resume_dir):
+        try:
+            accelerator.load_state(resume_dir)
+            if accelerator.is_main_process:
+                logging.info(f"Resumed accelerator state from {resume_dir}")
+        except Exception as e:
+            if accelerator.is_main_process:
+                logging.warning(f"Could not resume accelerator state from {resume_dir}: {e}")
+
+    global_step = 0
+    best_val = float("inf")
+
+    # Continue from start_epoch (epochs are 1-indexed for logging)
+    for epoch in range(max(1, start_epoch + 1), epochs + 1):
+        model.train()
+        running = 0.0
+        count = 0
+        pbar = tqdm(total=len(train_loader), desc=f"Epoch {epoch} [train]", disable=not accelerator.is_local_main_process)
+        comp_losses = {"acoustic": 0.0, "semantic": 0.0, "affective": 0.0}
+        for step, batch in enumerate(train_loader, start=1):
+            # Forward
+            out = model(**batch)
+            loss = out if isinstance(out, torch.Tensor) else (out.loss if hasattr(out, "loss") else out["total_loss"])  # type: ignore
+            
+            # Debug NaN detection
+            if torch.isnan(loss) or torch.isinf(loss):
+                logging.error(f"NaN/Inf detected at step {step}, epoch {epoch}")
+                if isinstance(out, dict):
+                    for k, v in out.items():
+                        if isinstance(v, torch.Tensor):
+                            logging.error(f"  {k}: {v.item() if v.numel() == 1 else 'tensor'}, nan={torch.isnan(v).any()}, inf={torch.isinf(v).any()}")
+                # Log batch info
+                sample_ids = [s.get('id', i) for i, s in enumerate(batch.get('sample_batch', []))]
+                logging.error(f"  Batch sample IDs: {sample_ids[:5]}...")  # First 5 IDs
+                raise RuntimeError("NaN/Inf loss detected!")
+            
+            loss = loss / grad_accum
+            accelerator.backward(loss)
+
+            if step % grad_accum == 0:
+                max_grad_norm = train_params_cache["gradient_clipping"]
+                if max_grad_norm > 0:
+                    accelerator.clip_grad_norm_(model.parameters(), max_grad_norm)
+                
+                optimizer.step()
+                optimizer.zero_grad(set_to_none=True)
+                if scheduler is not None:
+                    scheduler.step()
+                global_step += 1
+
+                # Log every step to wandb
+                if accelerator.is_main_process:
+                    log_data = {
+                        "train/loss": loss.item() * grad_accum,
+                        "train/learning_rate": scheduler.get_last_lr()[0] if scheduler else optimizer.param_groups[0]['lr'],
+                    }
+                    
+                    # Add component losses for train_enc
+                    if stage == "train_enc" and isinstance(out, dict):
+                        log_data.update({
+                            "train/acoustic_loss": out.get("acoustic_loss", torch.tensor(0.0)).item(),
+                            "train/semantic_loss": out.get("semantic_loss", torch.tensor(0.0)).item(),
+                            "train/affective_loss": out.get("affective_loss", torch.tensor(0.0)).item(),
+                        })
+                    
+                    wandb.log(log_data, step=global_step)
+
+                # Step-level checkpointing and optional validation per cadence
+                if train_params_cache["checkpoint_every_steps"] > 0 and (global_step % train_params_cache["checkpoint_every_steps"] == 0):
+                    step_val_loss = None
+                    if val_loader is not None and train_params_cache["validate_every_steps"] > 0 and (global_step % train_params_cache["validate_every_steps"] == 0):
+                        model.eval()
+                        total_step_val, n_step_val = 0.0, 0
+                        with torch.no_grad():
+                            for i, vb in enumerate(val_loader):
+                                vout = model(**vb)
+                                vloss = vout if isinstance(vout, torch.Tensor) else (vout.loss if hasattr(vout, "loss") else vout["total_loss"])  # type: ignore
+                                total_step_val += float(vloss.item())
+                                n_step_val += 1
+                                if train_params_cache["val_max_batches"] and n_step_val >= train_params_cache["val_max_batches"]:
+                                    break
+                        step_val_loss = total_step_val / max(1, n_step_val)
+                        model.train()
+
+                    # Log validation loss if we ran validation
+                    if step_val_loss is not None and accelerator.is_main_process:
+                        wandb.log({"val/loss": step_val_loss}, step=global_step)
+                    
+                    if accelerator.is_main_process:
+                        # Save rotating last checkpoints under step subdirectories
+                        save_rotating_checkpoint(
+                            accelerator=accelerator,
+                            model=model,
+                            optimizer=optimizer,
+                            epoch=epoch,
+                            global_step=global_step,
+                            base_dir=output_dir,
+                            keep_last_k=train_params_cache["last_k_checkpoints"],
+                        )
+                    accelerator.wait_for_everyone()
+
+            running += loss.item() * grad_accum
+            count += 1
+            
+            # Update component losses for display
+            if stage == "train_enc" and isinstance(out, dict):
+                comp_losses["acoustic"] += out.get("acoustic_loss", torch.tensor(0.0)).item()
+                comp_losses["semantic"] += out.get("semantic_loss", torch.tensor(0.0)).item()
+                comp_losses["affective"] += out.get("affective_loss", torch.tensor(0.0)).item()
+            
+            if accelerator.is_local_main_process:
+                postfix = {"loss": f"{(running/max(1,count)):.4f}"}
+                if stage == "train_enc":
+                    postfix.update({
+                        "a": f"{(comp_losses['acoustic']/max(1,count)):.3f}",
+                        "s": f"{(comp_losses['semantic']/max(1,count)):.3f}",
+                        "p": f"{(comp_losses['affective']/max(1,count)):.3f}",
+                    })
+                pbar.set_postfix(postfix)
+            pbar.update(1)
+
+        train_loss = running / max(1, count)
+        pbar.close()
+
+        # Validation
+        val_loss = None
+        if val_loader is not None:
+            model.eval()
+            total, n = 0.0, 0
+            with torch.no_grad():
+                vbar = tqdm(total=len(val_loader), desc=f"Epoch {epoch} [val]", disable=not accelerator.is_local_main_process)
+                for vb in val_loader:
+                    out = model(**vb)
+                    vloss = out if isinstance(out, torch.Tensor) else (out.loss if hasattr(out, "loss") else out["total_loss"])  # type: ignore
+                    total += float(vloss.item())
+                    n += 1
+                    vbar.update(1)
+                vbar.close()
+            val_loss = total / max(1, n)
+
+        if accelerator.is_main_process:
+            logging.info(f"Epoch {epoch}: train_loss={train_loss:.4f}" + (f", val_loss={val_loss:.4f}" if val_loss is not None else ""))
+            # Log epoch-end metrics
+            epoch_data = {"epoch": epoch, "train/epoch_loss": train_loss}
+            if val_loss is not None:
+                epoch_data["val/epoch_loss"] = val_loss
+            wandb.log(epoch_data, step=global_step)
+            # Save last
+            save_checkpoint(model, optimizer, epoch, global_step, output_dir, tag="last")
+            # Save best on val
+            if val_loss is not None and val_loss < best_val:
+                best_val = val_loss
+                save_checkpoint(model, optimizer, epoch, global_step, output_dir, tag="best")
+
+        accelerator.wait_for_everyone()
+
+        # Optional: epoch-end save of last (non-rotating); keep behavior minimal since we checkpoint by steps
+        try:
+            save_checkpoint(model, optimizer, epoch, global_step, output_dir, tag="last")
+        except Exception as e:
+            if accelerator.is_main_process:
+                logging.warning(f"Failed to save epoch-end 'last' checkpoint: {e}")
+
+
+def main() -> None:
+    args = parse_args()
+
+    # Load YAML and build configs
+    yaml_cfg = load_yaml(args.config_yaml)
+    whispa_cfg, train_params = build_config(yaml_cfg, args)
+
+    # Accelerator
+    ddp_kwargs = DistributedDataParallelKwargs(find_unused_parameters=False)
+    mixed_precision = args.mixed_precision or train_params["mixed_precision"]
+    # Resolve output directory from env and run_name
+    base_ckpt_dir = os.getenv('CHECKPOINT_DIR')
+    if base_ckpt_dir is None or base_ckpt_dir.strip() == "":
+        raise RuntimeError("CHECKPOINT_DIR environment variable is not set")
+        
+    run_name = train_params["logging"].get("run_name")
+    if not run_name:
+        run_name = f"whispa-{int(time.time())}"
+        train_params["logging"]["run_name"] = run_name
+    output_dir = os.path.join(base_ckpt_dir, run_name)
+
+    accelerator = Accelerator(
+        mixed_precision=mixed_precision,
+        kwargs_handlers=[ddp_kwargs],
+        log_with=train_params["logging"]["log_with"],
+        project_dir=output_dir,
+    )
+    set_seed(args.seed)
+
+    # Instantiate model; ensure config device/dtype align with accelerator
+    whispa_cfg.device = accelerator.device
+    # Map accelerator mp -> dtype if not explicitly set
+    if whispa_cfg.dtype is None:
+        if accelerator.mixed_precision == "bf16":
+            whispa_cfg.dtype = torch.bfloat16
+        elif accelerator.mixed_precision == "fp16":
+            whispa_cfg.dtype = torch.float16
+        else:
+            whispa_cfg.dtype = torch.float32
+
+    # Logging setup
+    if accelerator.is_main_process:
+        os.makedirs(output_dir, exist_ok=True)
+        logging.basicConfig(
+            level=logging.INFO,
+            format='%(asctime)s - %(levelname)s - %(message)s',
+            handlers=[logging.StreamHandler()]
+        )
+        logging.info("Initializing model with config:")
+        logging.info(str(whispa_cfg))
+
+    model = WhiSPAModel(whispa_cfg)
+    model.set_stage(whispa_cfg.stage)
+    model.train()
+
+    # Dataset
+    full_ds, size_map = choose_datasets(args.datasets)
+    total_size = len(full_ds)
+    train_subset, val_subset = split_dataset(full_ds, train_params["val_ratio"], args.seed)
+    if accelerator.is_main_process:
+        logging.info(f"Datasets loaded: {size_map}")
+        logging.info(f"Total combined samples: {total_size}")
+        if val_subset is None:
+            logging.info(f"Split: train={len(train_subset)}, val=0 (no validation split)")
+        else:
+            logging.info(f"Split: train={len(train_subset)}, val={len(val_subset)}")
+
+    # Collate for stage
+    stage = whispa_cfg.stage
+    emb_keys = (args.audio_emb_key, args.text_emb_key, args.psych_emb_key)
+    collate_fn = make_collate_for_stage(model, stage, args.language, emb_keys)
+
+    # DataLoader (num_workers=0 recommended; processor used in collate)
+    train_loader = DataLoader(train_subset, batch_size=train_params["batch_size"], shuffle=True, num_workers=max(0, int(args.num_workers)), collate_fn=collate_fn, pin_memory=False)
+    val_loader = None
+    if val_subset is not None and len(val_subset) > 0:
+        val_loader = DataLoader(val_subset, batch_size=train_params["batch_size"], shuffle=False, num_workers=max(0, int(args.num_workers)), collate_fn=collate_fn, pin_memory=False)
+
+    # Optimizer
+    optimizer = create_optimizer(model, lr=train_params["learning_rate"], weight_decay=train_params["weight_decay"])
+
+    # Scheduler
+    scheduler = None
+    if train_params["scheduler"]["type"] != "none":
+        num_update_steps_per_epoch = math.ceil(len(train_loader) / max(1, train_params["gradient_accumulation_steps"]))
+        max_train_steps = train_params["epochs"] * num_update_steps_per_epoch
+        warmup_steps = train_params["scheduler"]["warmup_steps"]
+        if warmup_steps == 0:
+            warmup_steps = int(train_params["scheduler"]["warmup_ratio"] * max_train_steps)
+        scheduler = get_cosine_schedule_with_warmup(optimizer, num_warmup_steps=warmup_steps, num_training_steps=max_train_steps)
+
+    # Init trackers (wandb) on main process
+    if accelerator.is_main_process and train_params["logging"]["log_with"] == "wandb":
+        wandb_kwargs = {
+            "project": train_params["logging"]["project"],
+            "name": train_params["logging"]["run_name"],
+            "entity": train_params["logging"]["entity"],
+            "tags": train_params["logging"]["tags"],
+            "notes": train_params["logging"]["notes"],
+            "dir": output_dir,
+            "config": {"model": whispa_cfg.to_dict() if hasattr(whispa_cfg, 'to_dict') else str(whispa_cfg), "train": train_params},
+        }
+        # Remove None entries
+        wandb_kwargs = {k: v for k, v in wandb_kwargs.items() if v is not None}
+        wandb.init(**wandb_kwargs)
+
+    # Determine start_epoch if classic checkpoint available
+    start_epoch = 0
+    try:
+        state_path = os.path.join(output_dir, "trainer_state.last.pt")
+        if os.path.exists(state_path):
+            st = torch.load(state_path, map_location="cpu")
+            start_epoch = int(st.get("epoch", 0))
+    except Exception:
+        start_epoch = 0
+
+    # Train
+    # Expose cadence to train_loop via module-level cache
+    global train_params_cache
+    train_params_cache = {
+        "checkpoint_every_steps": train_params["checkpoint_every_steps"],
+        "validate_every_steps": train_params["validate_every_steps"],
+        "val_max_batches": train_params["val_max_batches"],
+        "last_k_checkpoints": train_params["last_k_checkpoints"],
+        "gradient_clipping": train_params["gradient_clipping"],
+    }
+
+    train_loop(
+        accelerator=accelerator,
+        model=model,
+        train_loader=train_loader,
+        val_loader=val_loader,
+        optimizer=optimizer,
+        scheduler=scheduler,
+        stage=stage,
+        epochs=train_params["epochs"],
+        grad_accum=int(train_params["gradient_accumulation_steps"]),
+        output_dir=output_dir,
+        resume_dir=args.resume_from or output_dir,
+        start_epoch=start_epoch,
+    )
+
+    # Save final full state for precise resume capability
+    try:
+        accelerator.save_state(output_dir)
+        if accelerator.is_main_process:
+            logging.info("Saved accelerator state for future resume.")
+    except Exception as e:
+        if accelerator.is_main_process:
+            logging.warning(f"Failed to save accelerator state: {e}")
+
+    if accelerator.is_main_process:
+        logging.info("Training complete.")
+
+
+if __name__ == "__main__":
+    main()

@@ -22,7 +22,7 @@ if BASE_DIR not in sys.path:
 
 from model.config import WhiSPAConfig
 from model.whispa import WhiSPAModel
-from train.utils import last_token_pool, mean_token_pool
+from data.utils import last_token_pool, mean_token_pool
 
 # Setup logging
 logging.basicConfig(

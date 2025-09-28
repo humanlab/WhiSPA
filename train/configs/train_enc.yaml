@@ -1,0 +1,33 @@
+model:
+  backbone_model_id: mistralai/Voxtral-Mini-3B-2507
+  stage: train_enc
+  loss: MMRL
+  dtype: bfloat16
+  device: cuda
+
+train:
+  batch_size: 16
+  epochs: 1
+  learning_rate: 1.0e-4
+  weight_decay: 1.0e-2
+  mixed_precision: bf16
+  gradient_accumulation_steps: 10
+  gradient_clipping: 0.0
+  val_ratio: 0.05
+  checkpoint_every_steps: 5000
+  validate_every_steps: 20000
+  val_max_batches: 200
+  last_k_checkpoints: 3
+
+logging:
+  log_with: wandb
+  project: whispa
+  entity: inflection
+  run_name: whispa-enc-3b
+  tags: [mmrl, enc, mini3b]
+  notes: Encoder alignment training with MMRL
+
+scheduler:
+  type: cosine
+  warmup_ratio: 0.1
+  warmup_steps: 0

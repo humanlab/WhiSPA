@@ -9,7 +9,8 @@ if BASE_DIR not in sys.path:
 from typing import List
 import torch
 import torch.nn.functional as F
-from safetensors.torch import save_file as safetensors_save_file, load_file as safetensors_load_file
+from safetensors.torch import save_file
+from safetensors.torch import load_file
 from transformers.models.voxtral.processing_voxtral import VoxtralProcessor
 from transformers.models.voxtral.modeling_voxtral import VoxtralForConditionalGeneration
 from huggingface_hub import PyTorchModelHubMixin, snapshot_download
@@ -18,14 +19,17 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from model.config import WhiSPAConfig
-from train.utils import nmrl_loss
-from train.utils import trinary_alignment_loss
+from model.losses import mmrl_loss
+from model.losses import trinary_alignment_loss
 
 
 class WhiSPAProcessor:
     def __init__(self, config: WhiSPAConfig):
         self.config = config
-        self.processor = VoxtralProcessor.from_pretrained(config.backbone_model_id)
+        # self.processor = VoxtralProcessor.from_pretrained(config.backbone_model_id)
+        # Resolve a local snapshot of the Voxtral backbone to ensure availability across processes
+        local_dir = snapshot_download(repo_id=config.backbone_model_id)
+        self.processor = VoxtralProcessor.from_pretrained(local_dir)
 
     def __call__(self, audio: str | List[str], language: str = "en"):
         if isinstance(audio, str):
@@ -58,10 +62,10 @@ class WhiSPAProcessor:
         spans = torch.stack([starts, starts + counts], dim=1)
 
         return {
-            'spectral_inputs': batch['input_features'].to(self.config.device),
-            'sample_spans': spans.to(self.config.device),
-            'text_input_ids': batch['input_ids'].to(self.config.device),
-            'text_attention_mask': batch['attention_mask'].to(self.config.device),
+            'spectral_inputs': batch['input_features'],
+            'sample_spans': spans,
+            'text_input_ids': batch['input_ids'],
+            'text_attention_mask': batch['attention_mask'],
         }
 
 
@@ -90,36 +94,50 @@ class WhiSPAModel(
         self.processor = WhiSPAProcessor(self.config)
 
         # Load Voxtral backbone
-        self.voxtral = VoxtralForConditionalGeneration.from_pretrained(self.config.backbone_model_id)
+        # self.voxtral = VoxtralForConditionalGeneration.from_pretrained(self.config.backbone_model_id)
+        # Resolve a local snapshot of the Voxtral backbone to ensure availability across processes
+        voxtral_local_dir = snapshot_download(repo_id=self.config.backbone_model_id)
+        self.voxtral = VoxtralForConditionalGeneration.from_pretrained(voxtral_local_dir)
         self.config.vocab_size = self.voxtral.config.text_config.vocab_size
 
         # Decomposed modules
         self.spectral_encoder = self.voxtral.audio_tower.to(dtype=config.dtype, device=config.device)
         self.multi_modal_projector = self.voxtral.multi_modal_projector.to(dtype=config.dtype, device=config.device)
         self.language_model = self.voxtral.language_model.to(dtype=config.dtype, device=config.device)
+        self.activation = torch.nn.Tanh().to(config.device)
 
         # Set Loss functions
-        if self.config.loss == "NMRL":
-            self.loss_fn = nmrl_loss
+        if self.config.loss == "MMRL":
+            self.loss_fn = mmrl_loss
         elif self.config.loss == "TAL":
             self.loss_fn = trinary_alignment_loss
         else:
-            raise ValueError(f"Invalid loss function: {self.config.loss}. Must be one of ['NMRL', 'TAL'].")
+            raise ValueError(f"Invalid loss function: {self.config.loss}. Must be one of ['MMRL', 'TAL'].")
         
-        if config.stage == 'train_enc': # Training Stage 1
-            self._freeze_language_model()
+        self.set_stage(config.stage)
 
-        if config.stage == 'train_dec': # Training Stage 2
-            self._freeze_spectral_encoder()
-            self._freeze_projector()
 
-        else: # Inference
-            # Freeze all components for inference
-            self._freeze_spectral_encoder()
-            self._freeze_projector()
-            self._freeze_language_model()
+    def set_stage(self, stage: str):
+        if stage in {'train_enc', 'train_dec', 'inference'}:
+            self.config.stage = stage
+            if stage == 'train_enc': # Training Stage 1
+                self._unfreeze_spectral_encoder()
+                self._unfreeze_projector()
+                self._freeze_language_model()
+            elif stage == 'train_dec': # Training Stage 2
+                self._freeze_spectral_encoder()
+                self._freeze_projector()
+                self._unfreeze_language_model()
+            else: # Inference
+                self._freeze_spectral_encoder()
+                self._freeze_projector()
+                self._freeze_language_model()
+        else:
+            raise ValueError(f"Invalid stage: {stage}. Must be one of ['train_enc', 'train_dec', 'inference'].")
 
-        self.activation = torch.nn.Tanh().to(config.device)
+
+    def get_stage(self):
+        return self.config.stage
 
 
     def _freeze_spectral_encoder(self):
@@ -127,14 +145,32 @@ class WhiSPAModel(
             param.requires_grad = False
 
 
+    def _unfreeze_spectral_encoder(self):
+        for name, param in self.spectral_encoder.named_parameters():
+            if name.startswith('embed_positions.'):
+                param.requires_grad = False
+            else:
+                param.requires_grad = True
+
+
     def _freeze_language_model(self):
         for param in self.language_model.parameters():
             param.requires_grad = False
+
+    
+    def _unfreeze_language_model(self):
+        for param in self.language_model.parameters():
+            param.requires_grad = True
 
 
     def _freeze_projector(self):
         for param in self.multi_modal_projector.parameters():
             param.requires_grad = False
+
+
+    def _unfreeze_projector(self):
+        for param in self.multi_modal_projector.parameters():
+            param.requires_grad = True
 
 
     def compute_per_sample_means(self, spectral_latent: torch.Tensor, sample_spans: torch.Tensor) -> torch.Tensor:
@@ -200,7 +236,7 @@ class WhiSPAModel(
             semantic_loss: Loss for the text modality
             acoustic_loss: Loss for the audio modality
         """
-        spectral_latent = self.get_spectral_embeddings(spectral_inputs.to(self.config.device)) # [375 * N, hidden_size]
+        spectral_latent = self.get_spectral_embeddings(spectral_inputs.to(self.spectral_encoder.device)) # [375 * N, hidden_size]
 
         if self.config.stage == 'train_enc': # Training Stage 1
             """
@@ -320,6 +356,7 @@ class WhiSPAModel(
         self.config.save_pretrained(local_dir)
         torch.save(self.state_dict(), os.path.join(local_dir, 'pytorch_model.bin'))
 
+
     def save_pretrained_local(self, local_dir: str, safe_serialization: bool = True):
         """
         Save model locally in HuggingFace format without uploading.
@@ -337,7 +374,7 @@ class WhiSPAModel(
         state = {k: v for k, v in full_state.items() if not k.startswith('voxtral.')}
         if safe_serialization:
             safetensors_path = os.path.join(local_dir, 'model.safetensors')
-            safetensors_save_file(state, safetensors_path)
+            save_file(state, safetensors_path)
         else:
             torch.save(state, os.path.join(local_dir, 'pytorch_model.bin'))
 
@@ -350,13 +387,14 @@ class WhiSPAModel(
         safetensors_path = os.path.join(local_dir, "model.safetensors")
         bin_path = os.path.join(local_dir, "pytorch_model.bin")
         if os.path.exists(safetensors_path):
-            state_dict = safetensors_load_file(safetensors_path, device="cpu")
+            state_dict = load_file(safetensors_path, device="cpu")
         else:
             state_dict = torch.load(bin_path, map_location="cpu")
         # Allow missing monolithic aliases (e.g., `voxtral.*`) during load
         model.load_state_dict(state_dict, strict=False)
 
         return model
+
 
     @classmethod
     def from_pretrained_local(cls, local_dir: str):

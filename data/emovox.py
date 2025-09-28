@@ -1,4 +1,11 @@
-import os
+#!/usr/bin/env python3
+
+import sys, os
+# Add the root directory of the project to the Python path
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+if BASE_DIR not in sys.path:
+    sys.path.append(BASE_DIR)
+
 import json
 import argparse
 from typing import Any, Dict, List, Optional, Tuple
@@ -16,17 +23,10 @@ load_dotenv()
 
 """
 Example usage:
-  accelerate launch --multi_gpu \
-    data/gigaspeech/emovox.py \
-    --input /mnt/vast/data/speech/gigaspeech/data/data/gigaspeech_clean.jsonl \
-    --output /mnt/vast/data/speech/gigaspeech/data/data/gigaspeech_affect.jsonl \
-    --batch_size 64
-
-  CUDA_VISIBLE_DEVICES=0 accelerate launch --num_processes 1 \
-    data/gigaspeech/emovox.py \
-    --input /mnt/vast/data/speech/gigaspeech/data/data/gigaspeech_clean.jsonl \
-    --output /mnt/vast/data/speech/gigaspeech/data/data/gigaspeech_affect.jsonl \
-    --batch_size 64
+  accelerate launch --multi_gpu data/emovox.py \
+    --input /mnt/vast/data/speech/peoplespeech/test/dataset_og.jsonl \
+    --output /mnt/vast/data/speech/peoplespeech/test/dataset_clean.jsonl \
+    --batch_size 32
 """
 
 
@@ -159,7 +159,7 @@ class ShardDataset(torch.utils.data.Dataset):
             {
                 "role": "user",
                 "content": [
-                    {"type": "audio", "path": sample["path"]},
+                    {"type": "audio", "path": sample["audio"]},
                     {"type": "text", "text": SYSTEM_PROMPT},
                 ],
             }
@@ -367,12 +367,43 @@ def main():
             fsync_flush(out_f)
             pbar_merge.close()
 
-        # Step 8: final verification and atomic replace
+        # Step 8: final verification with de-dup by "index" and atomic replace
         verified_tmp = f"{args.output}.tmp"
+        verify_total = count_lines(args.output)
+
+        # First pass: determine first occurrence positions and first valid-affect positions per index
+        first_pos_by_index: Dict[Any, int] = {}
+        first_valid_pos_by_index: Dict[Any, int] = {}
+        with open(args.output, "r", encoding="utf-8") as src:
+            for pos, line in enumerate(src):
+                raw = line.rstrip("\n")
+                try:
+                    obj = json.loads(raw)
+                except Exception:
+                    continue
+                if not isinstance(obj, dict):
+                    continue
+                if "index" not in obj:
+                    continue
+                idx_val = obj.get("index")
+                if idx_val not in first_pos_by_index:
+                    first_pos_by_index[idx_val] = pos
+                if "affect" in obj:
+                    val = obj["affect"]
+                    valid = False
+                    if isinstance(val, (dict, list)):
+                        try:
+                            _ = json.loads(json.dumps(val))
+                            valid = True
+                        except Exception:
+                            valid = False
+                    if valid and (idx_val not in first_valid_pos_by_index):
+                        first_valid_pos_by_index[idx_val] = pos
+
+        # Second pass: write output applying affect validation and index de-dup policy
         with open(args.output, "r", encoding="utf-8") as src, open(verified_tmp, "w", encoding="utf-8") as dst:
-            verify_total = count_lines(args.output)
             pbar_verify = tqdm(total=verify_total, disable=not is_main, desc="verify", unit="lines", position=0)
-            for line in src:
+            for pos, line in enumerate(src):
                 raw = line.rstrip("\n")
                 try:
                     obj = json.loads(raw)
@@ -381,16 +412,29 @@ def main():
                     dst.write(raw + "\n")
                     pbar_verify.update(1)
                     continue
-                if isinstance(obj, dict) and ("affect" in obj):
-                    val = obj["affect"]
-                    if isinstance(val, (dict, list)):
-                        try:
-                            # round-trip
-                            _ = json.loads(json.dumps(val))
-                        except Exception:
+                if isinstance(obj, dict):
+                    # Validate affect JSON and remove if invalid
+                    if "affect" in obj:
+                        val = obj["affect"]
+                        if isinstance(val, (dict, list)):
+                            try:
+                                _ = json.loads(json.dumps(val))
+                            except Exception:
+                                obj.pop("affect", None)
+                        else:
                             obj.pop("affect", None)
-                    else:
-                        obj.pop("affect", None)
+
+                    # De-dup by index if present
+                    if "index" in obj:
+                        idx_val = obj.get("index")
+                        keep_pos = first_valid_pos_by_index.get(idx_val)
+                        if keep_pos is None:
+                            keep_pos = first_pos_by_index.get(idx_val)
+                        if keep_pos is not None and pos != keep_pos:
+                            # Skip duplicate entries for this index
+                            pbar_verify.update(1)
+                            continue
+
                 dst.write(json.dumps(obj, ensure_ascii=False) + "\n")
                 pbar_verify.update(1)
             fsync_flush(dst)

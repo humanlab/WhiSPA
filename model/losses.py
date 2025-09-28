@@ -1,42 +1,7 @@
+#!/usr/bin/env python3
+
 import torch
 import torch.nn.functional as F
-
-
-def mean_token_pool(embeddings: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
-    """
-    Mean pool the embeddings over valid (non-masked) tokens.
-
-    Args:
-        embeddings: Token embeddings from the model (batch_size, seq_len, hidden_dim)
-        attention_mask: Attention mask indicating valid tokens (batch_size, seq_len)
-
-    Returns:
-        Mean pooled embeddings (batch_size, hidden_dim)
-    """
-    input_mask_expanded = attention_mask.unsqueeze(-1).expand(embeddings.size()).float()
-    sum_embeddings = torch.sum(embeddings * input_mask_expanded, dim=1)
-    sum_mask = input_mask_expanded.sum(dim=1)
-    return sum_embeddings / torch.clamp(sum_mask, min=1e-9)
-
-
-def last_token_pool(last_hidden_states: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
-    """
-    Pool the last token from sequences, handling both left and right padding.
-    
-    Args:
-        last_hidden_states: Hidden states from the model
-        attention_mask: Attention mask indicating valid tokens
-    
-    Returns:
-        Pooled embeddings using the last valid token
-    """
-    left_padding = (attention_mask[:, -1].sum() == attention_mask.shape[0])
-    if left_padding:
-        return last_hidden_states[:, -1]
-    else:
-        sequence_lengths = attention_mask.sum(dim=1) - 1
-        batch_size = last_hidden_states.shape[0]
-        return last_hidden_states[torch.arange(batch_size, device=last_hidden_states.device), sequence_lengths]
 
 
 # Cosine Similarity Loss
@@ -193,8 +158,8 @@ def mrl_loss(
     return total
 
 
-# Nested Matryoshka Representation Loss (NMRL)
-def nmrl_loss(
+# Manifolded Matryoshka Representation Loss (MMRL)
+def mmrl_loss(
     whispa_embs: torch.Tensor,
     audio_embs: torch.Tensor,
     text_embs: torch.Tensor,
@@ -203,9 +168,9 @@ def nmrl_loss(
     𝜏: float = 0.1,
 ) -> torch.Tensor:
     """
-    Nested Matryoshka Representation Loss
+    Manifolded Matryoshka Representation Loss
     
-        L_NMRL = 0.33 * MRL(Z, A) + 0.33 * MRL(Z, B) + 0.33 * MRL(Z, C)
+        L_MMRL = 0.33 * MRL(Z, A) + 0.33 * MRL(Z, B) + 0.33 * MRL(Z, C)
         Z: Whispa embeddings
         A: Audio embeddings
         B: Text embeddings
