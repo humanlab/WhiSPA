@@ -13,17 +13,16 @@ train:
   mixed_precision: bf16
   gradient_accumulation_steps: 10
   gradient_clipping: 0.0
-  val_ratio: 0.05
-  checkpoint_every_steps: 5000
-  validate_every_steps: 20000
-  val_max_batches: 200
+  val_ratio: 0.1
+  checkpoint_every_steps: 10
+  validate_every_steps: 500
   last_k_checkpoints: 3
 
 logging:
   log_with: wandb
   project: whispa
   entity: inflection
-  run_name: whispa-enc-3b
+  run_name: whispa-enc-3b-fix
   tags: [mmrl, enc, mini3b]
   notes: Encoder alignment training with MMRL
 

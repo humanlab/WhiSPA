@@ -156,15 +156,9 @@ class EmbeddingExtractor:
         # This will load config.json and model.safetensors from the directory
         logger.info(f"Loading WhiSPA model from: {self.model_id}")
         self.model = WhiSPAModel.from_pretrained_local(self.model_id)
-        self.config = self.model.config
-        
-        # Update config for inference mode and device settings
-        self.config.stage = 'inference'
-        self.config.device = self.device
-        self.config.dtype = self.dtype
-        
-        # Update model's config with our settings
-        self.model.config = self.config
+        self.model.set_stage('inference')
+        self.model.config.device = self.device
+        self.model.config.dtype = self.dtype
         
         # CRITICAL: Move model components to the correct device and dtype
         # The model is loaded on CPU by default, we need to move it
@@ -202,7 +196,6 @@ class EmbeddingExtractor:
         # The model handles device placement internally
         logger.info(f"WhiSPA model loaded on device: {self.device}")
         
-        self.config = self.model.config
         self.model_type = 'whispa'
         
     def _load_qwen(self):

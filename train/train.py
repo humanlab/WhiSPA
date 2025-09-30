@@ -10,6 +10,7 @@ import argparse
 import math
 import logging
 from typing import Any, Dict, List, Optional, Tuple
+from datetime import timedelta
 
 import yaml
 import wandb
@@ -18,7 +19,7 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader, Dataset, Subset, ConcatDataset, random_split
 from accelerate import Accelerator, DistributedDataParallelKwargs
-from accelerate.utils import set_seed
+from accelerate.utils import set_seed, InitProcessGroupKwargs
 from transformers import get_cosine_schedule_with_warmup
 from tqdm import tqdm
 import shutil
@@ -55,7 +56,6 @@ def parse_args() -> argparse.Namespace:
     # Cadence controls
     p.add_argument("--checkpoint_every_steps", type=int, default=5000, help="Save checkpoint every N steps (default via YAML or 5000)")
     p.add_argument("--validate_every_steps", type=int, default=20000, help="Run partial validation every N steps (default via YAML or 20000)")
-    p.add_argument("--val_max_batches", type=int, default=200, help="Max val batches for step-cadence validation (default 200)")
     p.add_argument("--last_k_checkpoints", type=int, default=3, help="Keep only last K step checkpoints (default 3)")
     p.add_argument("--seed", type=int, default=42)
 
@@ -149,7 +149,6 @@ def build_config(yaml_cfg: Dict[str, Any], cli: argparse.Namespace) -> Tuple[Whi
         # Cadence defaults for large datasets (~10M samples) with YAML precedence
         "checkpoint_every_steps": int(train_cfg.get("checkpoint_every_steps", cli.checkpoint_every_steps)),
         "validate_every_steps": int(train_cfg.get("validate_every_steps", cli.validate_every_steps)),
-        "val_max_batches": int(train_cfg.get("val_max_batches", cli.val_max_batches)),
         "last_k_checkpoints": int(train_cfg.get("last_k_checkpoints", cli.last_k_checkpoints)),
         "logging": {
             "log_with": log_cfg.get("log_with", "wandb"),
@@ -291,61 +290,201 @@ def save_rotating_checkpoint(
     accelerator: Accelerator,
     model: WhiSPAModel,
     optimizer: torch.optim.Optimizer,
+    scheduler: Optional[torch.optim.lr_scheduler._LRScheduler],
     epoch: int,
     global_step: int,
     base_dir: str,
     keep_last_k: int,
 ) -> None:
-    os.makedirs(base_dir, exist_ok=True)
+    """
+    Save checkpoint in HuggingFace Trainer-compatible format.
+    The checkpoint will contain:
+    - model.safetensors: model weights
+    - config.json: model configuration
+    - trainer_state.json: training state (epoch, step, etc.)
+    - Accelerator state files (random states, scaler, optimizer, scheduler, dataloader)
+    """
+    # Only main process creates directories
+    if accelerator.is_main_process:
+        os.makedirs(base_dir, exist_ok=True)
+        ckpt_dir = os.path.join(base_dir, f"step-{global_step}")
+        os.makedirs(ckpt_dir, exist_ok=True)
+    
+    # Wait for directories to be created
+    accelerator.wait_for_everyone()
+    
+    # Get checkpoint directory on all processes
     ckpt_dir = os.path.join(base_dir, f"step-{global_step}")
-    os.makedirs(ckpt_dir, exist_ok=True)
-    # Save model weights/config
-    model.save_pretrained_local(ckpt_dir, safe_serialization=True)
-    # Save trainer state
-    torch.save({
-        "epoch": epoch,
-        "global_step": global_step,
-        "optimizer": optimizer.state_dict(),
-    }, os.path.join(ckpt_dir, "trainer_state.pt"))
-    # Save accelerator state (includes RNG, optimizer, scheduler, etc.)
+    
+    # Only main process saves model and additional state FIRST
+    if accelerator.is_main_process:
+        # Get unwrapped model - this is safe to do on main process only
+        unwrapped_model = accelerator.unwrap_model(model)
+        
+        # Ensure the model is in eval mode and on CPU for consistent saving
+        original_training = unwrapped_model.training
+        original_device = next(unwrapped_model.parameters()).device
+        
+        try:
+            unwrapped_model.eval()
+            unwrapped_model.cpu()
+            
+            # Save model weights/config
+            unwrapped_model.save_pretrained_local(ckpt_dir, safe_serialization=True)
+            
+        finally:
+            # Restore original state
+            if original_training:
+                unwrapped_model.train()
+            unwrapped_model.to(original_device)
+        
+        # Save trainer state in HuggingFace format
+        trainer_state = {
+            "epoch": epoch,
+            "global_step": global_step,
+            "best_metric": None,  # Can be updated if tracking validation
+            "best_model_checkpoint": None,
+            "is_hyper_param_search": False,
+            "is_world_process_zero": accelerator.is_main_process,
+            "trial_name": None,
+            "trial_params": None,
+            "log_history": [],  # Can be populated if needed
+        }
+        
+        import json
+        with open(os.path.join(ckpt_dir, "trainer_state.json"), "w", encoding="utf-8") as f:
+            json.dump(trainer_state, f, indent=2)
+        
+        # Also save a simplified state for backward compatibility
+        torch.save({
+            "epoch": epoch,
+            "global_step": global_step,
+        }, os.path.join(ckpt_dir, "trainer_state.pt"))
+        
+        # Update latest pointer
+        with open(os.path.join(base_dir, "latest"), "w", encoding="utf-8") as f:
+            f.write(f"step-{global_step}")
+        
+        # Rotate old checkpoints
+        subdirs = [d for d in os.listdir(base_dir) if d.startswith("step-") and os.path.isdir(os.path.join(base_dir, d))]
+        
+        def _step_from_name(n: str) -> int:
+            try:
+                return int(n.split("-", 1)[1])
+            except Exception:
+                return -1
+        
+        subdirs.sort(key=_step_from_name)
+        if len(subdirs) > keep_last_k:
+            to_delete = subdirs[: len(subdirs) - keep_last_k]
+            for d in to_delete:
+                full = os.path.join(base_dir, d)
+                try:
+                    shutil.rmtree(full)
+                    logging.info(f"Deleted old checkpoint: {full}")
+                except Exception as e:
+                    logging.warning(f"Failed to delete old checkpoint {full}: {e}")
+        
+        logging.info(f"Saved checkpoint at {ckpt_dir}")
+    
+    # Wait for main process to finish saving model
+    accelerator.wait_for_everyone()
+    
+    # Save accelerator state (includes optimizer, scheduler, RNG states, scaler, dataloader)
+    # This MUST be called on all processes AFTER model saving is complete
     try:
         accelerator.save_state(ckpt_dir)
     except Exception as e:
         if accelerator.is_main_process:
-            logging.warning(f"Failed to save accelerator state at {ckpt_dir}: {e}")
-    # Update latest pointer
-    with open(os.path.join(base_dir, "LATEST"), "w", encoding="utf-8") as f:
-        f.write(str(global_step))
-    # Rotate old checkpoints
+            logging.error(f"Failed to save accelerator state: {e}")
+        # Re-raise to ensure all processes fail together
+        raise
+    
+    # Final synchronization
+    accelerator.wait_for_everyone()
+
+
+def copy_best_checkpoint_to_base(best_checkpoint_dir: str, base_dir: str, accelerator: Accelerator) -> None:
+    """Copy the best checkpoint files to the base directory."""
+    if not accelerator.is_main_process or not best_checkpoint_dir:
+        return
+    
+    best_dir = os.path.join(base_dir, best_checkpoint_dir)
+    if not os.path.exists(best_dir):
+        logging.warning(f"Best checkpoint directory {best_dir} not found")
+        return
+    
+    try:
+        # Copy model files
+        for filename in ["model.safetensors", "config.json"]:
+            src = os.path.join(best_dir, filename)
+            dst = os.path.join(base_dir, filename)
+            if os.path.exists(src):
+                shutil.copy2(src, dst)
+                logging.info(f"Copied {filename} from best checkpoint {best_checkpoint_dir}")
+            
+    except Exception as e:
+        logging.error(f"Failed to copy best checkpoint: {e}")
+
+
+def find_latest_checkpoint(base_dir: str) -> Optional[str]:
+    """Find the latest checkpoint directory."""
+    if not os.path.exists(base_dir):
+        return None
+    
+    # First check for a 'latest' file
+    latest_file = os.path.join(base_dir, "latest")
+    if os.path.exists(latest_file):
+        with open(latest_file, "r", encoding="utf-8") as f:
+            latest_name = f.read().strip()
+            latest_path = os.path.join(base_dir, latest_name)
+            if os.path.exists(latest_path):
+                return latest_path
+    
+    # Otherwise, find the highest numbered step-* directory
     subdirs = [d for d in os.listdir(base_dir) if d.startswith("step-") and os.path.isdir(os.path.join(base_dir, d))]
-    # Sort by step number
+    if not subdirs:
+        return None
+    
     def _step_from_name(n: str) -> int:
         try:
             return int(n.split("-", 1)[1])
         except Exception:
             return -1
+    
     subdirs.sort(key=_step_from_name)
-    if len(subdirs) > keep_last_k:
-        to_delete = subdirs[: len(subdirs) - keep_last_k]
-        for d in to_delete:
-            full = os.path.join(base_dir, d)
-            try:
-                shutil.rmtree(full)
-            except Exception as e:
-                if accelerator.is_main_process:
-                    logging.warning(f"Failed to delete old checkpoint {full}: {e}")
+    latest_checkpoint = os.path.join(base_dir, subdirs[-1])
+    
+    # Log available checkpoints for debugging
+    logging.info(f"Found {len(subdirs)} checkpoint directories: {subdirs}")
+    logging.info(f"Selected latest checkpoint: {subdirs[-1]}")
+    
+    return latest_checkpoint
 
 
-def load_resume(model: WhiSPAModel, optimizer: torch.optim.Optimizer, resume_dir: str) -> Tuple[int, int]:
-    state_path = os.path.join(resume_dir, "trainer_state.last.pt")
-    if not os.path.exists(state_path):
-        # Also try any trainer_state.*.pt
-        candidates = [os.path.join(resume_dir, f) for f in os.listdir(resume_dir) if f.startswith("trainer_state.") and f.endswith(".pt")]
-        state_path = candidates[0] if candidates else None
-    if state_path and os.path.exists(state_path):
-        state = torch.load(state_path, map_location="cpu")
-        optimizer.load_state_dict(state.get("optimizer", {}))
-        return int(state.get("epoch", 0)), int(state.get("global_step", 0))
+def load_trainer_state_from_checkpoint(checkpoint_dir: str, grad_accum_steps: int) -> Tuple[int, int]:
+    """Load epoch and global_step from a checkpoint directory.
+    Note: The checkpoint directory name contains raw_step, so we need to convert back to global_step."""
+    # Try JSON format first (new format)
+    json_path = os.path.join(checkpoint_dir, "trainer_state.json")
+    if os.path.exists(json_path):
+        import json
+        with open(json_path, "r", encoding="utf-8") as f:
+            state = json.load(f)
+            # global_step in the file is actually raw_step due to our naming convention
+            raw_step = int(state.get("global_step", 0))
+            # Convert raw_step back to optimizer step
+            global_step = raw_step // grad_accum_steps if raw_step > 0 else 0
+            return int(state.get("epoch", 0)), global_step
+    
+    # Try PT format (legacy)
+    pt_path = os.path.join(checkpoint_dir, "trainer_state.pt")
+    if os.path.exists(pt_path):
+        state = torch.load(pt_path, map_location="cpu")
+        raw_step = int(state.get("global_step", 0))
+        global_step = raw_step // grad_accum_steps if raw_step > 0 else 0
+        return int(state.get("epoch", 0)), global_step
+    
     return 0, 0
 
 
@@ -362,31 +501,85 @@ def train_loop(
     output_dir: str,
     resume_dir: Optional[str] = None,
     start_epoch: int = 0,
-) -> None:
+) -> Tuple[int, int, Optional[str]]:
     # Prepare for accelerate
     if scheduler is not None:
         model, optimizer, train_loader, val_loader, scheduler = accelerator.prepare(model, optimizer, train_loader, val_loader, scheduler)
     else:
         model, optimizer, train_loader, val_loader = accelerator.prepare(model, optimizer, train_loader, val_loader)
+    
+    # Pre-compute validation batch count for periodic validation
+    # Use ratio based on validation frequency: validate_every_steps / total_training_steps
+    if val_loader is not None and train_params_cache["validate_every_steps"] > 0:
+        total_training_steps = epochs * math.ceil(len(train_loader) / max(1, grad_accum))
+        validation_ratio = train_params_cache["validate_every_steps"] / total_training_steps
+        max_val_batches = max(1, int(len(val_loader) * validation_ratio))
+    else:
+        max_val_batches = 0
 
-    # Load full accelerator state (optimizer/scheduler/rng/dataloader) if provided
-    if resume_dir is not None and os.path.isdir(resume_dir):
-        try:
-            accelerator.load_state(resume_dir)
+    # Determine actual resume checkpoint directory
+    actual_resume_dir = None
+    resumed_epoch = start_epoch
+    resumed_step = 0
+    
+    if resume_dir is not None:
+        if accelerator.is_main_process:
+            logging.info(f"Attempting to resume from: {resume_dir}")
+        
+        # Check if resume_dir is a specific checkpoint or a base directory
+        if os.path.exists(os.path.join(resume_dir, "pytorch_model_fsdp.bin")) or \
+           os.path.exists(os.path.join(resume_dir, "model.safetensors")) or \
+           os.path.exists(os.path.join(resume_dir, "config.json")):
+            # It's a specific checkpoint directory
+            actual_resume_dir = resume_dir
             if accelerator.is_main_process:
-                logging.info(f"Resumed accelerator state from {resume_dir}")
-        except Exception as e:
+                logging.info(f"Found specific checkpoint directory: {actual_resume_dir}")
+        else:
+            # It's a base directory, find the latest checkpoint
             if accelerator.is_main_process:
-                logging.warning(f"Could not resume accelerator state from {resume_dir}: {e}")
+                logging.info(f"Searching for latest checkpoint in base directory: {resume_dir}")
+            actual_resume_dir = find_latest_checkpoint(resume_dir)
+            if actual_resume_dir:
+                if accelerator.is_main_process:
+                    logging.info(f"Found latest checkpoint: {actual_resume_dir}")
+            else:
+                if accelerator.is_main_process:
+                    logging.warning(f"No step-* directories found in {resume_dir}")
+        
+        if actual_resume_dir and os.path.isdir(actual_resume_dir):
+            try:
+                # Load accelerator state (includes optimizer, scheduler, RNG states, scaler)
+                accelerator.load_state(actual_resume_dir)
+                
+                # Load trainer state to get epoch and step
+                resumed_epoch, resumed_step = load_trainer_state_from_checkpoint(actual_resume_dir, grad_accum)
+                
+                if accelerator.is_main_process:
+                    logging.info(f"Successfully resumed from checkpoint: {actual_resume_dir}")
+                    logging.info(f"Resuming from epoch {resumed_epoch}, step {resumed_step}")
+            except Exception as e:
+                if accelerator.is_main_process:
+                    logging.error(f"Failed to resume from {actual_resume_dir}: {e}")
+                    logging.error("Starting training from scratch...")
+                resumed_epoch = start_epoch
+                resumed_step = 0
+        else:
+            if accelerator.is_main_process:
+                logging.warning(f"No valid checkpoint found in {resume_dir}, starting from scratch")
 
-    global_step = 0
-    best_val = float("inf")
+    global_step = resumed_step
+    raw_step = resumed_step * grad_accum  # Track raw batch count
+    best_val_loss = float("inf")
+    best_checkpoint_dir = None
 
-    # Continue from start_epoch (epochs are 1-indexed for logging)
-    for epoch in range(max(1, start_epoch + 1), epochs + 1):
+    # Continue from resumed_epoch (epochs are 1-indexed for logging)
+    start_from_epoch = max(1, resumed_epoch if resumed_epoch > 0 else start_epoch + 1)
+    for epoch in range(start_from_epoch, epochs + 1):
         model.train()
-        running = 0.0
-        count = 0
+        train_running = 0.0
+        train_count = 0
+        val_running = 0.0
+        val_count = 0
         pbar = tqdm(total=len(train_loader), desc=f"Epoch {epoch} [train]", disable=not accelerator.is_local_main_process)
         comp_losses = {"acoustic": 0.0, "semantic": 0.0, "affective": 0.0}
         for step, batch in enumerate(train_loader, start=1):
@@ -408,6 +601,9 @@ def train_loop(
             
             loss = loss / grad_accum
             accelerator.backward(loss)
+            
+            # Increment raw step counter for every batch
+            raw_step += 1
 
             if step % grad_accum == 0:
                 max_grad_norm = train_params_cache["gradient_clipping"]
@@ -437,42 +633,78 @@ def train_loop(
                     
                     wandb.log(log_data, step=global_step)
 
-                # Step-level checkpointing and optional validation per cadence
-                if train_params_cache["checkpoint_every_steps"] > 0 and (global_step % train_params_cache["checkpoint_every_steps"] == 0):
-                    step_val_loss = None
-                    if val_loader is not None and train_params_cache["validate_every_steps"] > 0 and (global_step % train_params_cache["validate_every_steps"] == 0):
-                        model.eval()
-                        total_step_val, n_step_val = 0.0, 0
-                        with torch.no_grad():
-                            for i, vb in enumerate(val_loader):
-                                vout = model(**vb)
-                                vloss = vout if isinstance(vout, torch.Tensor) else (vout.loss if hasattr(vout, "loss") else vout["total_loss"])  # type: ignore
-                                total_step_val += float(vloss.item())
-                                n_step_val += 1
-                                if train_params_cache["val_max_batches"] and n_step_val >= train_params_cache["val_max_batches"]:
-                                    break
-                        step_val_loss = total_step_val / max(1, n_step_val)
-                        model.train()
-
-                    # Log validation loss if we ran validation
-                    if step_val_loss is not None and accelerator.is_main_process:
-                        wandb.log({"val/loss": step_val_loss}, step=global_step)
+                # Validation per cadence (independent of checkpointing)
+                if val_loader is not None and train_params_cache["validate_every_steps"] > 0 and (global_step % train_params_cache["validate_every_steps"] == 0):
+                    model.eval()
+                    total_step_val, n_step_val = 0.0, 0
+                    val_comp_losses = {"acoustic": 0.0, "semantic": 0.0, "affective": 0.0}
                     
+                    with torch.no_grad():
+                        vbar = tqdm(total=max_val_batches, desc=f"Step {raw_step} [val]", disable=not accelerator.is_local_main_process)
+                        for i, vb in enumerate(val_loader):
+                            if i >= max_val_batches:
+                                break
+                            vout = model(**vb)
+                            vloss = vout if isinstance(vout, torch.Tensor) else (vout.loss if hasattr(vout, "loss") else vout["total_loss"])  # type: ignore
+                            total_step_val += float(vloss.item())
+                            n_step_val += 1
+                            
+                            # Log component losses per batch (same as training loop)
+                            if accelerator.is_main_process and stage == "train_enc" and isinstance(vout, dict):
+                                log_data = {
+                                    "val/acoustic_loss": vout.get("acoustic_loss", torch.tensor(0.0)).item(),
+                                    "val/semantic_loss": vout.get("semantic_loss", torch.tensor(0.0)).item(),
+                                    "val/affective_loss": vout.get("affective_loss", torch.tensor(0.0)).item(),
+                                }
+                                wandb.log(log_data, step=global_step)
+                            
+                            # Accumulate component losses for averaging
+                            if stage == "train_enc" and isinstance(vout, dict):
+                                val_comp_losses["acoustic"] += vout.get("acoustic_loss", torch.tensor(0.0)).item()
+                                val_comp_losses["semantic"] += vout.get("semantic_loss", torch.tensor(0.0)).item()
+                                val_comp_losses["affective"] += vout.get("affective_loss", torch.tensor(0.0)).item()
+                            
+                            vbar.update(1)
+                        vbar.close()
+                    
+                    # Use total validation loss for this validation run
+                    total_val_loss = total_step_val
+                    model.train()
+                    
+                    # Log total validation loss
                     if accelerator.is_main_process:
-                        # Save rotating last checkpoints under step subdirectories
-                        save_rotating_checkpoint(
-                            accelerator=accelerator,
-                            model=model,
-                            optimizer=optimizer,
-                            epoch=epoch,
-                            global_step=global_step,
-                            base_dir=output_dir,
-                            keep_last_k=train_params_cache["last_k_checkpoints"],
-                        )
+                        wandb.log({"val/loss": total_val_loss}, step=global_step)
+                        logging.info(f"Step {raw_step}: val_loss={total_val_loss:.4f}")
+                        
+                        # Accumulate validation loss for epoch summary (same pattern as training)
+                        val_running += total_val_loss
+                        val_count += 1
+                        
+                        # Track best validation loss using total loss
+                        if total_val_loss < best_val_loss:
+                            best_val_loss = total_val_loss
+                            best_checkpoint_dir = f"step-{raw_step}"
+                            logging.info(f"New best validation loss: {best_val_loss:.4f} at step {raw_step}")
+                
+                # Step-level checkpointing (independent of validation)
+                if train_params_cache["checkpoint_every_steps"] > 0 and (global_step % train_params_cache["checkpoint_every_steps"] == 0):
+                    # Ensure all processes are synchronized before checkpointing
                     accelerator.wait_for_everyone()
+                    
+                    # Save rotating last checkpoints under step subdirectories
+                    save_rotating_checkpoint(
+                        accelerator=accelerator,
+                        model=model,
+                        optimizer=optimizer,
+                        scheduler=scheduler,
+                        epoch=epoch,
+                        global_step=raw_step,  # Use raw_step for naming
+                        base_dir=output_dir,
+                        keep_last_k=train_params_cache["last_k_checkpoints"],
+                    )
 
-            running += loss.item() * grad_accum
-            count += 1
+            train_running += loss.item() * grad_accum
+            train_count += 1
             
             # Update component losses for display
             if stage == "train_enc" and isinstance(out, dict):
@@ -481,57 +713,32 @@ def train_loop(
                 comp_losses["affective"] += out.get("affective_loss", torch.tensor(0.0)).item()
             
             if accelerator.is_local_main_process:
-                postfix = {"loss": f"{(running/max(1,count)):.4f}"}
+                postfix = {"loss": f"{(train_running/max(1,train_count)):.4f}"}
                 if stage == "train_enc":
                     postfix.update({
-                        "a": f"{(comp_losses['acoustic']/max(1,count)):.3f}",
-                        "s": f"{(comp_losses['semantic']/max(1,count)):.3f}",
-                        "p": f"{(comp_losses['affective']/max(1,count)):.3f}",
+                        "a": f"{(comp_losses['acoustic']/max(1,train_count)):.3f}",
+                        "s": f"{(comp_losses['semantic']/max(1,train_count)):.3f}",
+                        "p": f"{(comp_losses['affective']/max(1,train_count)):.3f}",
                     })
                 pbar.set_postfix(postfix)
             pbar.update(1)
 
-        train_loss = running / max(1, count)
+        train_loss = train_running / max(1, train_count)
+        val_loss = val_running / max(1, val_count) if val_count > 0 else None
         pbar.close()
 
-        # Validation
-        val_loss = None
-        if val_loader is not None:
-            model.eval()
-            total, n = 0.0, 0
-            with torch.no_grad():
-                vbar = tqdm(total=len(val_loader), desc=f"Epoch {epoch} [val]", disable=not accelerator.is_local_main_process)
-                for vb in val_loader:
-                    out = model(**vb)
-                    vloss = out if isinstance(out, torch.Tensor) else (out.loss if hasattr(out, "loss") else out["total_loss"])  # type: ignore
-                    total += float(vloss.item())
-                    n += 1
-                    vbar.update(1)
-                vbar.close()
-            val_loss = total / max(1, n)
-
         if accelerator.is_main_process:
-            logging.info(f"Epoch {epoch}: train_loss={train_loss:.4f}" + (f", val_loss={val_loss:.4f}" if val_loss is not None else ""))
-            # Log epoch-end metrics
+            # Log epoch-end metrics (same pattern for both train and val)
             epoch_data = {"epoch": epoch, "train/epoch_loss": train_loss}
             if val_loss is not None:
                 epoch_data["val/epoch_loss"] = val_loss
+            logging.info(f"Epoch {epoch}: train_loss={train_loss:.4f}" + (f", val_loss={val_loss:.4f}" if val_loss is not None else ""))
             wandb.log(epoch_data, step=global_step)
-            # Save last
-            save_checkpoint(model, optimizer, epoch, global_step, output_dir, tag="last")
-            # Save best on val
-            if val_loss is not None and val_loss < best_val:
-                best_val = val_loss
-                save_checkpoint(model, optimizer, epoch, global_step, output_dir, tag="best")
 
         accelerator.wait_for_everyone()
-
-        # Optional: epoch-end save of last (non-rotating); keep behavior minimal since we checkpoint by steps
-        try:
-            save_checkpoint(model, optimizer, epoch, global_step, output_dir, tag="last")
-        except Exception as e:
-            if accelerator.is_main_process:
-                logging.warning(f"Failed to save epoch-end 'last' checkpoint: {e}")
+    
+    # Return final epoch, global_step, and best checkpoint info
+    return epoch, global_step, best_checkpoint_dir
 
 
 def main() -> None:
@@ -541,8 +748,10 @@ def main() -> None:
     yaml_cfg = load_yaml(args.config_yaml)
     whispa_cfg, train_params = build_config(yaml_cfg, args)
 
-    # Accelerator
+    # Accelerator with 6-hour timeout for wait_for_everyone
     ddp_kwargs = DistributedDataParallelKwargs(find_unused_parameters=False)
+    # Set 6-hour timeout (21600 seconds) for distributed operations
+    init_kwargs = InitProcessGroupKwargs(timeout=timedelta(seconds=21600))
     mixed_precision = args.mixed_precision or train_params["mixed_precision"]
     # Resolve output directory from env and run_name
     base_ckpt_dir = os.getenv('CHECKPOINT_DIR')
@@ -557,7 +766,7 @@ def main() -> None:
 
     accelerator = Accelerator(
         mixed_precision=mixed_precision,
-        kwargs_handlers=[ddp_kwargs],
+        kwargs_handlers=[ddp_kwargs, init_kwargs],
         log_with=train_params["logging"]["log_with"],
         project_dir=output_dir,
     )
@@ -640,15 +849,8 @@ def main() -> None:
         wandb_kwargs = {k: v for k, v in wandb_kwargs.items() if v is not None}
         wandb.init(**wandb_kwargs)
 
-    # Determine start_epoch if classic checkpoint available
+    # Start epoch will be determined from resume_dir in train_loop
     start_epoch = 0
-    try:
-        state_path = os.path.join(output_dir, "trainer_state.last.pt")
-        if os.path.exists(state_path):
-            st = torch.load(state_path, map_location="cpu")
-            start_epoch = int(st.get("epoch", 0))
-    except Exception:
-        start_epoch = 0
 
     # Train
     # Expose cadence to train_loop via module-level cache
@@ -656,12 +858,11 @@ def main() -> None:
     train_params_cache = {
         "checkpoint_every_steps": train_params["checkpoint_every_steps"],
         "validate_every_steps": train_params["validate_every_steps"],
-        "val_max_batches": train_params["val_max_batches"],
         "last_k_checkpoints": train_params["last_k_checkpoints"],
         "gradient_clipping": train_params["gradient_clipping"],
     }
 
-    train_loop(
+    final_epoch, final_step, best_checkpoint_dir = train_loop(
         accelerator=accelerator,
         model=model,
         train_loader=train_loader,
@@ -676,15 +877,30 @@ def main() -> None:
         start_epoch=start_epoch,
     )
 
-    # Save final full state for precise resume capability
-    try:
-        accelerator.save_state(output_dir)
+    # Save final checkpoint at training completion (must be called on all processes)
+    if final_step > 0:
+        final_raw_step = final_step * train_params["gradient_accumulation_steps"]
+        save_rotating_checkpoint(
+            accelerator=accelerator,
+            model=model,
+            optimizer=optimizer,
+            scheduler=scheduler,
+            epoch=final_epoch,
+            global_step=final_raw_step,  # Use raw step count for naming
+            base_dir=output_dir,
+            keep_last_k=train_params["last_k_checkpoints"],
+        )
         if accelerator.is_main_process:
-            logging.info("Saved accelerator state for future resume.")
-    except Exception as e:
-        if accelerator.is_main_process:
-            logging.warning(f"Failed to save accelerator state: {e}")
+            logging.info(f"Saved final checkpoint at step {final_raw_step}")
+    
+    # Copy best checkpoint to base directory
+    if accelerator.is_main_process and best_checkpoint_dir:
+        copy_best_checkpoint_to_base(best_checkpoint_dir, output_dir, accelerator)
+        logging.info(f"Best model checkpoint: {best_checkpoint_dir}")
 
+    # Final synchronization before exit
+    accelerator.wait_for_everyone()
+    
     if accelerator.is_main_process:
         logging.info("Training complete.")
 

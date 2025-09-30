@@ -367,16 +367,47 @@ class WhiSPAModel(
         os.makedirs(local_dir, exist_ok=True)
         # Save config
         self.config.save_pretrained(local_dir)
-        # Save weights
-        full_state = self.state_dict()
-        # Filter out duplicate alias keys under the monolithic `voxtral.*` namespace to
-        # avoid shared-storage conflicts when saving with safetensors.
-        state = {k: v for k, v in full_state.items() if not k.startswith('voxtral.')}
-        if safe_serialization:
-            safetensors_path = os.path.join(local_dir, 'model.safetensors')
-            save_file(state, safetensors_path)
-        else:
-            torch.save(state, os.path.join(local_dir, 'pytorch_model.bin'))
+        
+        # Save weights - ensure we're in eval mode and on CPU for consistent saving
+        original_training = self.training
+        original_device = next(self.parameters()).device
+        
+        try:
+            self.eval()  # Ensure consistent state
+            # Move to CPU temporarily for saving to avoid device-specific issues
+            self.cpu()
+            
+            # Get state dict
+            full_state = self.state_dict()
+            
+            # Validate state dict - check for corrupted parameters
+            valid_state = {}
+            corrupted_count = 0
+            for k, v in full_state.items():
+                if v.numel() == 0:
+                    print(f"Warning: Skipping empty parameter {k}")
+                    corrupted_count += 1
+                elif torch.isnan(v).any() or torch.isinf(v).any():
+                    print(f"Warning: Skipping parameter {k} with NaN/Inf values")
+                    corrupted_count += 1
+                else:
+                    valid_state[k] = v
+            
+            if corrupted_count > 0:
+                print(f"Warning: Found {corrupted_count} corrupted parameters during saving")
+            
+            # Save the valid state
+            if safe_serialization:
+                safetensors_path = os.path.join(local_dir, 'model.safetensors')
+                save_file(valid_state, safetensors_path)
+            else:
+                torch.save(valid_state, os.path.join(local_dir, 'pytorch_model.bin'))
+                
+        finally:
+            # Restore original state
+            if original_training:
+                self.train()
+            self.to(original_device)
 
 
     @classmethod
@@ -390,8 +421,28 @@ class WhiSPAModel(
             state_dict = load_file(safetensors_path, device="cpu")
         else:
             state_dict = torch.load(bin_path, map_location="cpu")
-        # Allow missing monolithic aliases (e.g., `voxtral.*`) during load
-        model.load_state_dict(state_dict, strict=False)
+        
+        # Filter out corrupted parameters (empty tensors or wrong shapes)
+        filtered_state_dict = {}
+        model_state_dict = model.state_dict()
+        
+        for key, saved_tensor in state_dict.items():
+            if key in model_state_dict:
+                expected_shape = model_state_dict[key].shape
+                saved_shape = saved_tensor.shape
+                
+                # Skip if saved tensor is empty or has wrong shape
+                if saved_tensor.numel() == 0:
+                    print(f"Warning: Skipping empty tensor {key}")
+                    continue
+                elif saved_shape != expected_shape:
+                    print(f"Warning: Skipping tensor {key} with wrong shape {saved_shape}, expected {expected_shape}")
+                    continue
+                else:
+                    filtered_state_dict[key] = saved_tensor
+        
+        print(f"Loaded {len(filtered_state_dict)}/{len(state_dict)} parameters from checkpoint")
+        model.load_state_dict(filtered_state_dict, strict=False)
 
         return model
 

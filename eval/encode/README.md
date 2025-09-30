@@ -59,9 +59,8 @@ python eval/encode/run_evaluation.py \
 ```bash
 # Use all available GPUs (auto-detect)
 accelerate launch --multi_gpu eval/encode/run_evaluation.py \
-    --model_id /mnt/vast/share/checkpoints/rajath-cmd/WhiSPA/Voxtral-Mini-3B \
+    --model_id /mnt/vast/share/checkpoints/rajath-cmd/WhiSPA/whispa-enc-3b/step-49410 \
     --model_type audio \
-    --dataset_list iemocap meld \
     --batch_size 16 \
     --num_workers 32
 
@@ -80,18 +79,6 @@ accelerate launch --num_processes 2 eval/encode/run_evaluation.py \
     --dataset_list iemocap meld \
     --batch_size 64 \
     --num_workers 32
-```
-
-Configure multi-GPU settings:
-```bash
-# Interactive configuration (one-time setup)
-accelerate config
-
-# Or use environment variables for specific GPUs
-export CUDA_VISIBLE_DEVICES=0,1,2,3  # Use GPUs 0,1,2,3
-
-# Check available GPUs
-nvidia-smi
 ```
 
 ### Performance Tips

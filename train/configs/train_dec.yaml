@@ -11,11 +11,10 @@ train:
   learning_rate: 5.0e-5
   weight_decay: 1.0e-2
   mixed_precision: bf16
-  gradient_accumulation_steps: 1
+  gradient_accumulation_steps: 10
   val_ratio: 0.05
-  checkpoint_every_steps: 5000
+  checkpoint_every_steps: 1000
   validate_every_steps: 20000
-  val_max_batches: 200
   last_k_checkpoints: 3
 
 logging:
