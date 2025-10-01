@@ -380,15 +380,48 @@ class WhiSPAModel(
         config = WhiSPAConfig.from_pretrained(local_dir)
 
         model = cls(config)
+        
+        # Try different weight loading strategies in order of preference
+        state_dict = None
+        
+        # 1. Try single model.safetensors file
         safetensors_path = os.path.join(local_dir, "model.safetensors")
-        bin_path = os.path.join(local_dir, "pytorch_model.bin")
-
         if os.path.exists(safetensors_path):
             state_dict = load_file(safetensors_path, device="cpu")
-        elif os.path.exists(bin_path):
-            state_dict = torch.load(bin_path, map_location="cpu")
+        
+        # 2. Try sharded safetensors with index
+        elif os.path.exists(os.path.join(local_dir, "model.safetensors.index.json")):
+            import json
+            with open(os.path.join(local_dir, "model.safetensors.index.json"), "r") as f:
+                index = json.load(f)
+            
+            # Load all shards
+            state_dict = {}
+            weight_map = index.get("weight_map", {})
+            loaded_shards = set()
+            
+            for param_name, shard_file in weight_map.items():
+                if shard_file not in loaded_shards:
+                    shard_path = os.path.join(local_dir, shard_file)
+                    if os.path.exists(shard_path):
+                        shard_state = load_file(shard_path, device="cpu")
+                        state_dict.update(shard_state)
+                        loaded_shards.add(shard_file)
+        
+        # 3. Try pytorch_model_fsdp.bin (from FSDP training)
+        elif os.path.exists(os.path.join(local_dir, "pytorch_model_fsdp.bin")):
+            state_dict = torch.load(os.path.join(local_dir, "pytorch_model_fsdp.bin"), map_location="cpu")
+        
+        # 4. Try pytorch_model.bin
+        elif os.path.exists(os.path.join(local_dir, "pytorch_model.bin")):
+            state_dict = torch.load(os.path.join(local_dir, "pytorch_model.bin"), map_location="cpu")
+        
         else:
-            raise FileNotFoundError(f"No model weights found in {local_dir}")
+            raise FileNotFoundError(
+                f"No model weights found in {local_dir}. "
+                f"Looked for: model.safetensors, model.safetensors.index.json (sharded), "
+                f"pytorch_model_fsdp.bin, pytorch_model.bin"
+            )
         
         model.load_state_dict(state_dict, strict=False)
         return model

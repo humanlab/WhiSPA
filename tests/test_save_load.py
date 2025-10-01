@@ -17,11 +17,11 @@ load_dotenv()
 
 def test_save_and_load_local():
     CHECKPOINT_DIR = os.getenv("CHECKPOINT_DIR")
-    save_dir = os.path.join(CHECKPOINT_DIR, "Voxtral-Small-24B")
+    save_dir = os.path.join(CHECKPOINT_DIR, "Voxtral-Mini-3B")
     os.makedirs(save_dir, exist_ok=True)
 
     cfg = WhiSPAConfig(
-        backbone_model_id="mistralai/Voxtral-Small-24B-2507",
+        backbone_model_id="mistralai/Voxtral-Mini-3B-2507",
         stage='inference', 
         device='cpu', 
         dtype=torch.bfloat16,

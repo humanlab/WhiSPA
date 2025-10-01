@@ -9,6 +9,7 @@ if BASE_DIR not in sys.path:
 import argparse
 import math
 import logging
+import json
 from typing import Any, Dict, List, Optional, Tuple
 from datetime import timedelta
 
@@ -130,8 +131,9 @@ def build_config(yaml_cfg: Dict[str, Any], cli: argparse.Namespace) -> Tuple[Whi
     if isinstance(dt_in, str):
         model_cfg["dtype"] = dtype_map.get(dt_in, torch.bfloat16)
 
-    # Default device
-    model_cfg.setdefault("device", "cuda" if torch.cuda.is_available() else "cpu")
+    # Default device - always CPU for distributed training compatibility
+    # Accelerator will handle device placement after prepare()
+    model_cfg.setdefault("device", "cpu")
 
     # Build model config (extra keys are stored automatically)
     cfg = WhiSPAConfig(**model_cfg)
@@ -274,16 +276,6 @@ def create_optimizer(model: WhiSPAModel, lr: float, weight_decay: float) -> torc
     return torch.optim.AdamW(params, lr=lr, weight_decay=weight_decay)
 
 
-def save_checkpoint(model: WhiSPAModel, optimizer: torch.optim.Optimizer, epoch: int, global_step: int, output_dir: str, tag: str = "last") -> None:
-    os.makedirs(output_dir, exist_ok=True)
-    # Save model weights/config via provided API
-    model.save_pretrained(output_dir, safe_serialization=True)
-    # Save optimizer and trainer state
-    torch.save({
-        "epoch": epoch,
-        "global_step": global_step,
-        "optimizer": optimizer.state_dict(),
-    }, os.path.join(output_dir, f"trainer_state.{tag}.pt"))
 
 
 def save_rotating_checkpoint(
@@ -297,111 +289,55 @@ def save_rotating_checkpoint(
     keep_last_k: int,
 ) -> None:
     """
-    Save checkpoint in HuggingFace Trainer-compatible format.
-    The checkpoint will contain:
-    - model.safetensors: model weights
-    - config.json: model configuration
-    - trainer_state.json: training state (epoch, step, etc.)
-    - Accelerator state files (random states, scaler, optimizer, scheduler, dataloader)
+    Save checkpoint with model weights and training state.
+    Uses Accelerate's save_model for proper handling of distributed models.
     """
-    # Only main process creates directories
-    if accelerator.is_main_process:
-        os.makedirs(base_dir, exist_ok=True)
-        ckpt_dir = os.path.join(base_dir, f"step-{global_step}")
-        os.makedirs(ckpt_dir, exist_ok=True)
-    
-    # Wait for directories to be created
-    accelerator.wait_for_everyone()
-    
-    # Get checkpoint directory on all processes
+    # Create checkpoint directory
     ckpt_dir = os.path.join(base_dir, f"step-{global_step}")
     
-    # Only main process saves model and additional state FIRST
+    # Save model using accelerator (handles unwrapping and distributed saving correctly)
+    accelerator.wait_for_everyone()
+    accelerator.save_model(model, ckpt_dir, safe_serialization=True)
+    
+    # Save training state on main process only
     if accelerator.is_main_process:
-        # Get unwrapped model - this is safe to do on main process only
+        # Save config separately (save_model doesn't save it)
         unwrapped_model = accelerator.unwrap_model(model)
+        unwrapped_model.config.save_pretrained(ckpt_dir)
         
-        # Ensure the model is in eval mode and on CPU for consistent saving
-        original_training = unwrapped_model.training
-        original_device = next(unwrapped_model.parameters()).device
-        
-        try:
-            unwrapped_model.eval()
-            unwrapped_model.cpu()
-            
-            # Save model weights/config
-            unwrapped_model.save_pretrained(ckpt_dir, safe_serialization=True)
-            
-        finally:
-            # Restore original state
-            if original_training:
-                unwrapped_model.train()
-            unwrapped_model.to(original_device)
-        
-        # Save trainer state in HuggingFace format
+        # Save trainer state
         trainer_state = {
             "epoch": epoch,
             "global_step": global_step,
-            "best_metric": None,  # Can be updated if tracking validation
-            "best_model_checkpoint": None,
-            "is_hyper_param_search": False,
-            "is_world_process_zero": accelerator.is_main_process,
-            "trial_name": None,
-            "trial_params": None,
-            "log_history": [],  # Can be populated if needed
         }
         
-        import json
         with open(os.path.join(ckpt_dir, "trainer_state.json"), "w", encoding="utf-8") as f:
             json.dump(trainer_state, f, indent=2)
         
-        # Also save a simplified state for backward compatibility
-        torch.save({
-            "epoch": epoch,
-            "global_step": global_step,
-        }, os.path.join(ckpt_dir, "trainer_state.pt"))
+        torch.save(trainer_state, os.path.join(ckpt_dir, "trainer_state.pt"))
         
         # Update latest pointer
+        os.makedirs(base_dir, exist_ok=True)
         with open(os.path.join(base_dir, "latest"), "w", encoding="utf-8") as f:
             f.write(f"step-{global_step}")
         
         # Rotate old checkpoints
         subdirs = [d for d in os.listdir(base_dir) if d.startswith("step-") and os.path.isdir(os.path.join(base_dir, d))]
+        subdirs.sort(key=lambda n: int(n.split("-", 1)[1]) if n.startswith("step-") and "-" in n else -1)
         
-        def _step_from_name(n: str) -> int:
-            try:
-                return int(n.split("-", 1)[1])
-            except Exception:
-                return -1
-        
-        subdirs.sort(key=_step_from_name)
         if len(subdirs) > keep_last_k:
-            to_delete = subdirs[: len(subdirs) - keep_last_k]
-            for d in to_delete:
-                full = os.path.join(base_dir, d)
+            for d in subdirs[:-keep_last_k]:
                 try:
-                    shutil.rmtree(full)
-                    logging.info(f"Deleted old checkpoint: {full}")
+                    shutil.rmtree(os.path.join(base_dir, d))
+                    logging.info(f"Deleted old checkpoint: {d}")
                 except Exception as e:
-                    logging.warning(f"Failed to delete old checkpoint {full}: {e}")
+                    logging.warning(f"Failed to delete {d}: {e}")
         
         logging.info(f"Saved checkpoint at {ckpt_dir}")
     
-    # Wait for main process to finish saving model
+    # Save accelerator state (optimizer, scheduler, RNG states, scaler)
     accelerator.wait_for_everyone()
-    
-    # Save accelerator state (includes optimizer, scheduler, RNG states, scaler)
-    # Note: This does NOT include model weights when saved separately via save_pretrained
-    # This MUST be called on all processes AFTER model saving is complete
-    try:
-        accelerator.save_state(ckpt_dir)
-    except Exception as e:
-        if accelerator.is_main_process:
-            logging.error(f"Failed to save accelerator state: {e}")
-        # Re-raise to ensure all processes fail together
-        raise
-    
-    # Final synchronization
+    accelerator.save_state(ckpt_dir)
     accelerator.wait_for_everyone()
 
 
@@ -469,7 +405,6 @@ def load_trainer_state_from_checkpoint(checkpoint_dir: str, grad_accum_steps: in
     # Try JSON format first (new format)
     json_path = os.path.join(checkpoint_dir, "trainer_state.json")
     if os.path.exists(json_path):
-        import json
         with open(json_path, "r", encoding="utf-8") as f:
             state = json.load(f)
             # global_step in the file is actually raw_step due to our naming convention
@@ -549,18 +484,19 @@ def train_loop(
         
         if actual_resume_dir and os.path.isdir(actual_resume_dir):
             try:
-                # Load accelerator state (includes optimizer, scheduler, RNG states, scaler)
+                # Load accelerator state (optimizer, scheduler, RNG states, scaler)
+                # Note: Model weights are already loaded in main() before prepare()
                 accelerator.load_state(actual_resume_dir)
                 
                 # Load trainer state to get epoch and step
                 resumed_epoch, resumed_step = load_trainer_state_from_checkpoint(actual_resume_dir, grad_accum)
                 
                 if accelerator.is_main_process:
-                    logging.info(f"Successfully resumed from checkpoint: {actual_resume_dir}")
+                    logging.info(f"Successfully resumed accelerator state from: {actual_resume_dir}")
                     logging.info(f"Resuming from epoch {resumed_epoch}, step {resumed_step}")
             except Exception as e:
                 if accelerator.is_main_process:
-                    logging.error(f"Failed to resume from {actual_resume_dir}: {e}")
+                    logging.error(f"Failed to resume accelerator state from {actual_resume_dir}: {e}")
                     logging.error("Starting training from scratch...")
                 resumed_epoch = start_epoch
                 resumed_step = 0
@@ -773,9 +709,8 @@ def main() -> None:
     )
     set_seed(args.seed)
 
-    # Instantiate model; ensure config device/dtype align with accelerator
-    whispa_cfg.device = accelerator.device
-    # Map accelerator mp -> dtype if not explicitly set
+    # IMPORTANT: Model MUST be on CPU before accelerator.prepare() for distributed training
+    whispa_cfg.device = torch.device("cpu")
     if whispa_cfg.dtype is None:
         if accelerator.mixed_precision == "bf16":
             whispa_cfg.dtype = torch.bfloat16
@@ -795,12 +730,13 @@ def main() -> None:
         logging.info("Initializing model with config:")
         logging.info(str(whispa_cfg))
 
-    # Check if we should load model from checkpoint
+    # Create model
     model_loaded_from_checkpoint = False
     if args.resume_from is not None:
         # Try to find the checkpoint directory
         resume_checkpoint_dir = None
         if os.path.exists(os.path.join(args.resume_from, "model.safetensors")) or \
+           os.path.exists(os.path.join(args.resume_from, "model.safetensors.index.json")) or \
            os.path.exists(os.path.join(args.resume_from, "config.json")):
             # It's a specific checkpoint directory
             resume_checkpoint_dir = args.resume_from
@@ -808,12 +744,19 @@ def main() -> None:
             # It's a base directory, find the latest checkpoint
             resume_checkpoint_dir = find_latest_checkpoint(args.resume_from)
         
-        if resume_checkpoint_dir and os.path.exists(os.path.join(resume_checkpoint_dir, "model.safetensors")):
+        if resume_checkpoint_dir and os.path.isdir(resume_checkpoint_dir):
             try:
                 if accelerator.is_main_process:
                     logging.info(f"Loading model from checkpoint: {resume_checkpoint_dir}")
+                    
                 model = WhiSPAModel.from_pretrained_local(resume_checkpoint_dir)
+                # Override config with current training config
+                for key, value in whispa_cfg.__dict__.items():
+                    setattr(model.config, key, value)
+                model.config.device = torch.device("cpu")
+                model = model.cpu()
                 model_loaded_from_checkpoint = True
+
                 if accelerator.is_main_process:
                     logging.info("Successfully loaded model from checkpoint")
             except Exception as e:
@@ -824,6 +767,8 @@ def main() -> None:
     # Create new model if not loaded from checkpoint
     if not model_loaded_from_checkpoint:
         model = WhiSPAModel(whispa_cfg)
+        if accelerator.is_main_process:
+            logging.info("Created new model from config")
     
     model.set_stage(whispa_cfg.stage)
     model.train()
@@ -907,7 +852,7 @@ def main() -> None:
         start_epoch=start_epoch,
     )
 
-    # Save final checkpoint at training completion (must be called on all processes)
+    # Save final checkpoint at training completion
     if final_step > 0:
         final_raw_step = final_step * train_params["gradient_accumulation_steps"]
         save_rotating_checkpoint(
@@ -916,7 +861,7 @@ def main() -> None:
             optimizer=optimizer,
             scheduler=scheduler,
             epoch=final_epoch,
-            global_step=final_raw_step,  # Use raw step count for naming
+            global_step=final_raw_step,
             base_dir=output_dir,
             keep_last_k=train_params["last_k_checkpoints"],
         )
