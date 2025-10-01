@@ -7,6 +7,7 @@ if BASE_DIR not in sys.path:
     sys.path.append(BASE_DIR)
 
 from typing import List
+import copy
 import torch
 import torch.nn.functional as F
 from safetensors.torch import save_file
@@ -94,17 +95,17 @@ class WhiSPAModel(
         self.processor = WhiSPAProcessor(self.config)
 
         # Load Voxtral backbone
-        # self.voxtral = VoxtralForConditionalGeneration.from_pretrained(self.config.backbone_model_id)
-        # Resolve a local snapshot of the Voxtral backbone to ensure availability across processes
-        voxtral_local_dir = snapshot_download(repo_id=self.config.backbone_model_id)
-        self.voxtral = VoxtralForConditionalGeneration.from_pretrained(voxtral_local_dir)
-        self.config.vocab_size = self.voxtral.config.text_config.vocab_size
-
+        local_dir = snapshot_download(repo_id=self.config.backbone_model_id)
+        voxtral = VoxtralForConditionalGeneration.from_pretrained(local_dir)
+        self.voxtral_config = voxtral.config
+        
         # Decomposed modules
-        self.spectral_encoder = self.voxtral.audio_tower.to(dtype=config.dtype, device=config.device)
-        self.multi_modal_projector = self.voxtral.multi_modal_projector.to(dtype=config.dtype, device=config.device)
-        self.language_model = self.voxtral.language_model.to(dtype=config.dtype, device=config.device)
+        self.spectral_encoder = copy.deepcopy(voxtral.audio_tower).to(dtype=config.dtype, device=config.device)
+        self.multi_modal_projector = copy.deepcopy(voxtral.multi_modal_projector).to(dtype=config.dtype, device=config.device)
+        self.language_model = copy.deepcopy(voxtral.language_model).to(dtype=config.dtype, device=config.device)
         self.activation = torch.nn.Tanh().to(config.device)
+
+        del voxtral
 
         # Set Loss functions
         if self.config.loss == "MMRL":
@@ -112,7 +113,7 @@ class WhiSPAModel(
         elif self.config.loss == "TAL":
             self.loss_fn = trinary_alignment_loss
         else:
-            raise ValueError(f"Invalid loss function: {self.config.loss}. Must be one of ['MMRL', 'TAL'].")
+            raise ValueError(f"Invalid loss function: {self.config.loss}")
         
         self.set_stage(config.stage)
 
@@ -195,14 +196,14 @@ class WhiSPAModel(
 
     def get_spectral_embeddings(self, spectral_inputs: torch.Tensor):
         spectral_latent = self.spectral_encoder(spectral_inputs).last_hidden_state # [N, max_source_positions, audio_config.hidden_size]
-        spectral_latent = spectral_latent.reshape(-1, self.voxtral.config.audio_config.intermediate_size) # [375 * N, audio_config.intermediate_size]
+        spectral_latent = spectral_latent.reshape(-1, self.voxtral_config.audio_config.intermediate_size) # [375 * N, audio_config.intermediate_size]
         spectral_embs = self.multi_modal_projector(spectral_latent) # [375 * N, hidden_size]
         return spectral_embs
 
     
     def get_text_embeddings(self, text_input_ids: torch.Tensor, spectral_latent: torch.Tensor):
         inputs_embs = self.language_model.get_input_embeddings()(text_input_ids)        
-        audio_token_mask = text_input_ids == self.voxtral.config.audio_token_id
+        audio_token_mask = text_input_ids == self.voxtral_config.audio_token_id
         inputs_embs[audio_token_mask] = spectral_latent
         return inputs_embs
 
@@ -344,20 +345,14 @@ class WhiSPAModel(
 
         # Generate
         with torch.no_grad():
-            outputs = self.voxtral.generate(**inputs, **kwargs)
+            outputs = self.voxtral_config.generate(**inputs, **kwargs)
 
         # Decode only continuation past the prompt
         continuations = outputs[:, inputs["input_ids"].shape[1]:]
         return self.processor.processor.batch_decode(continuations, skip_special_tokens=True)
 
 
-    def _save_pretrained(self, local_dir: str):
-        os.makedirs(local_dir, exist_ok=True)
-        self.config.save_pretrained(local_dir)
-        torch.save(self.state_dict(), os.path.join(local_dir, 'pytorch_model.bin'))
-
-
-    def save_pretrained_local(self, local_dir: str, safe_serialization: bool = True):
+    def save_pretrained(self, local_dir: str, safe_serialization: bool = True):
         """
         Save model locally in HuggingFace format without uploading.
 
@@ -368,46 +363,16 @@ class WhiSPAModel(
         # Save config
         self.config.save_pretrained(local_dir)
         
-        # Save weights - ensure we're in eval mode and on CPU for consistent saving
-        original_training = self.training
-        original_device = next(self.parameters()).device
-        
-        try:
-            self.eval()  # Ensure consistent state
-            # Move to CPU temporarily for saving to avoid device-specific issues
-            self.cpu()
-            
-            # Get state dict
-            full_state = self.state_dict()
-            
-            # Validate state dict - check for corrupted parameters
-            valid_state = {}
-            corrupted_count = 0
-            for k, v in full_state.items():
-                if v.numel() == 0:
-                    print(f"Warning: Skipping empty parameter {k}")
-                    corrupted_count += 1
-                elif torch.isnan(v).any() or torch.isinf(v).any():
-                    print(f"Warning: Skipping parameter {k} with NaN/Inf values")
-                    corrupted_count += 1
-                else:
-                    valid_state[k] = v
-            
-            if corrupted_count > 0:
-                print(f"Warning: Found {corrupted_count} corrupted parameters during saving")
-            
-            # Save the valid state
-            if safe_serialization:
-                safetensors_path = os.path.join(local_dir, 'model.safetensors')
-                save_file(valid_state, safetensors_path)
-            else:
-                torch.save(valid_state, os.path.join(local_dir, 'pytorch_model.bin'))
-                
-        finally:
-            # Restore original state
-            if original_training:
-                self.train()
-            self.to(original_device)
+        # Save weights
+        full_state = self.state_dict()
+        weights_path = os.path.join(local_dir, "model.safetensors" if safe_serialization else "pytorch_model.bin")
+
+        if safe_serialization:
+            # Save as .safetensors
+            save_file(full_state, weights_path)
+        else:
+            # Save as legacy PyTorch
+            torch.save(full_state, weights_path)
 
 
     @classmethod
@@ -417,40 +382,16 @@ class WhiSPAModel(
         model = cls(config)
         safetensors_path = os.path.join(local_dir, "model.safetensors")
         bin_path = os.path.join(local_dir, "pytorch_model.bin")
+
         if os.path.exists(safetensors_path):
             state_dict = load_file(safetensors_path, device="cpu")
-        else:
+        elif os.path.exists(bin_path):
             state_dict = torch.load(bin_path, map_location="cpu")
+        else:
+            raise FileNotFoundError(f"No model weights found in {local_dir}")
         
-        # Filter out corrupted parameters (empty tensors or wrong shapes)
-        filtered_state_dict = {}
-        model_state_dict = model.state_dict()
-        
-        for key, saved_tensor in state_dict.items():
-            if key in model_state_dict:
-                expected_shape = model_state_dict[key].shape
-                saved_shape = saved_tensor.shape
-                
-                # Skip if saved tensor is empty or has wrong shape
-                if saved_tensor.numel() == 0:
-                    print(f"Warning: Skipping empty tensor {key}")
-                    continue
-                elif saved_shape != expected_shape:
-                    print(f"Warning: Skipping tensor {key} with wrong shape {saved_shape}, expected {expected_shape}")
-                    continue
-                else:
-                    filtered_state_dict[key] = saved_tensor
-        
-        print(f"Loaded {len(filtered_state_dict)}/{len(state_dict)} parameters from checkpoint")
-        model.load_state_dict(filtered_state_dict, strict=False)
-
+        model.load_state_dict(state_dict, strict=False)
         return model
-
-
-    @classmethod
-    def from_pretrained_local(cls, local_dir: str):
-        """Load a locally saved WhiSPAModel from `save_pretrained_local`."""
-        return cls._from_pretrained(local_dir=local_dir)
     
 
     @classmethod
@@ -462,6 +403,12 @@ class WhiSPAModel(
             force_download=force_download,
             **hub_kwargs
         )
+        return cls._from_pretrained(local_dir=local_dir)
+
+    
+    @classmethod
+    def from_pretrained_local(cls, local_dir: str):
+        """Load a locally saved WhiSPAModel from `save_pretrained_local`."""
         return cls._from_pretrained(local_dir=local_dir)
 
 

@@ -277,7 +277,7 @@ def create_optimizer(model: WhiSPAModel, lr: float, weight_decay: float) -> torc
 def save_checkpoint(model: WhiSPAModel, optimizer: torch.optim.Optimizer, epoch: int, global_step: int, output_dir: str, tag: str = "last") -> None:
     os.makedirs(output_dir, exist_ok=True)
     # Save model weights/config via provided API
-    model.save_pretrained_local(output_dir, safe_serialization=True)
+    model.save_pretrained(output_dir, safe_serialization=True)
     # Save optimizer and trainer state
     torch.save({
         "epoch": epoch,
@@ -330,7 +330,7 @@ def save_rotating_checkpoint(
             unwrapped_model.cpu()
             
             # Save model weights/config
-            unwrapped_model.save_pretrained_local(ckpt_dir, safe_serialization=True)
+            unwrapped_model.save_pretrained(ckpt_dir, safe_serialization=True)
             
         finally:
             # Restore original state
@@ -390,7 +390,8 @@ def save_rotating_checkpoint(
     # Wait for main process to finish saving model
     accelerator.wait_for_everyone()
     
-    # Save accelerator state (includes optimizer, scheduler, RNG states, scaler, dataloader)
+    # Save accelerator state (includes optimizer, scheduler, RNG states, scaler)
+    # Note: This does NOT include model weights when saved separately via save_pretrained
     # This MUST be called on all processes AFTER model saving is complete
     try:
         accelerator.save_state(ckpt_dir)
@@ -794,7 +795,36 @@ def main() -> None:
         logging.info("Initializing model with config:")
         logging.info(str(whispa_cfg))
 
-    model = WhiSPAModel(whispa_cfg)
+    # Check if we should load model from checkpoint
+    model_loaded_from_checkpoint = False
+    if args.resume_from is not None:
+        # Try to find the checkpoint directory
+        resume_checkpoint_dir = None
+        if os.path.exists(os.path.join(args.resume_from, "model.safetensors")) or \
+           os.path.exists(os.path.join(args.resume_from, "config.json")):
+            # It's a specific checkpoint directory
+            resume_checkpoint_dir = args.resume_from
+        else:
+            # It's a base directory, find the latest checkpoint
+            resume_checkpoint_dir = find_latest_checkpoint(args.resume_from)
+        
+        if resume_checkpoint_dir and os.path.exists(os.path.join(resume_checkpoint_dir, "model.safetensors")):
+            try:
+                if accelerator.is_main_process:
+                    logging.info(f"Loading model from checkpoint: {resume_checkpoint_dir}")
+                model = WhiSPAModel.from_pretrained_local(resume_checkpoint_dir)
+                model_loaded_from_checkpoint = True
+                if accelerator.is_main_process:
+                    logging.info("Successfully loaded model from checkpoint")
+            except Exception as e:
+                if accelerator.is_main_process:
+                    logging.warning(f"Failed to load model from checkpoint: {e}")
+                    logging.info("Creating new model instead")
+    
+    # Create new model if not loaded from checkpoint
+    if not model_loaded_from_checkpoint:
+        model = WhiSPAModel(whispa_cfg)
+    
     model.set_stage(whispa_cfg.stage)
     model.train()
 

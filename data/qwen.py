@@ -5,7 +5,6 @@ Accelerate-powered, resumable Qwen embedding extractor.
 - Reads an input JSONL dataset.
 - Extracts text per sample using --extract_key (default: transcription).
 - If --extract_key == affect, converts the JSON dict to a string via json_to_fenced_json_str
-  using the same selection logic as in EmbeddingDataset from qwen_old.py.
 - Computes embeddings with Qwen3-Embedding and saves per-sample .npy files in --embedding_dir.
 - Writes per-rank temp JSONL files with the updated samples, where the new attribute key is the
   basename of --embedding_dir and its value is the saved .npy filepath.
