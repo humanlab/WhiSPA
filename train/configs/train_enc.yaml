@@ -22,7 +22,7 @@ logging:
   log_with: wandb
   project: whispa
   entity: inflection
-  run_name: whispa-enc-3b-fix
+  run_name: whispa-enc-3b
   tags: [mmrl, enc, mini3b]
   notes: Encoder alignment training with MMRL
 

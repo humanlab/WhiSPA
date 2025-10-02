@@ -575,6 +575,7 @@ def train_loop(
                     model.eval()
                     total_step_val, n_step_val = 0.0, 0
                     val_comp_losses = {"acoustic": 0.0, "semantic": 0.0, "affective": 0.0}
+                    val_batch_losses = []  # Store individual batch losses
                     
                     with torch.no_grad():
                         vbar = tqdm(total=max_val_batches, desc=f"Step {raw_step} [val]", disable=not accelerator.is_local_main_process)
@@ -583,24 +584,10 @@ def train_loop(
                                 break
                             vout = model(**vb)
                             vloss = vout if isinstance(vout, torch.Tensor) else (vout.loss if hasattr(vout, "loss") else vout["total_loss"])  # type: ignore
-                            total_step_val += float(vloss.item())
+                            batch_loss = float(vloss.item())
+                            total_step_val += batch_loss
                             n_step_val += 1
-                            
-                            # Log validation loss per batch
-                            if accelerator.is_main_process:
-                                log_data = {
-                                    "val/loss": vloss.item(),
-                                }
-                                
-                                # Add component losses for train_enc
-                                if stage == "train_enc" and isinstance(vout, dict):
-                                    log_data.update({
-                                        "val/acoustic_loss": vout.get("acoustic_loss", torch.tensor(0.0)).item(),
-                                        "val/semantic_loss": vout.get("semantic_loss", torch.tensor(0.0)).item(),
-                                        "val/affective_loss": vout.get("affective_loss", torch.tensor(0.0)).item(),
-                                    })
-                                
-                                wandb.log(log_data, step=global_step + i)
+                            val_batch_losses.append(batch_loss)
                             
                             # Accumulate component losses for averaging
                             if stage == "train_enc" and isinstance(vout, dict):
@@ -615,9 +602,31 @@ def train_loop(
                     avg_val_loss = total_step_val / max(1, n_step_val)
                     model.train()
                     
-                    # Log average validation loss summary
-                    if accelerator.is_main_process:
-                        # Note: Individual batch losses are already logged above
+                    # Log validation summary metrics
+                    if accelerator.is_main_process and n_step_val > 0:
+                        # Calculate validation statistics
+                        val_loss_std = torch.tensor(val_batch_losses).std().item() if len(val_batch_losses) > 1 else 0.0
+                        val_loss_min = min(val_batch_losses) if val_batch_losses else 0.0
+                        val_loss_max = max(val_batch_losses) if val_batch_losses else 0.0
+                        
+                        # Log all validation metrics at once
+                        log_data = {
+                            "val/loss": avg_val_loss,
+                            "val/loss_std": val_loss_std,
+                            "val/loss_min": val_loss_min,
+                            "val/loss_max": val_loss_max,
+                            "val/num_batches": n_step_val,
+                        }
+                        
+                        # Add average component losses for train_enc
+                        if stage == "train_enc" and n_step_val > 0:
+                            log_data.update({
+                                "val/acoustic_loss": val_comp_losses["acoustic"] / n_step_val,
+                                "val/semantic_loss": val_comp_losses["semantic"] / n_step_val,
+                                "val/affective_loss": val_comp_losses["affective"] / n_step_val,
+                            })
+                        
+                        wandb.log(log_data, step=global_step)
                         logging.info(f"Step {raw_step}: avg_val_loss={avg_val_loss:.4f} (over {n_step_val} batches)")
                         
                         # Accumulate validation loss for epoch summary
@@ -642,7 +651,7 @@ def train_loop(
                         optimizer=optimizer,
                         scheduler=scheduler,
                         epoch=epoch,
-                        global_step=raw_step,  # Use raw_step for naming
+                        global_step=raw_step,
                         base_dir=output_dir,
                         keep_last_k=train_params_cache["last_k_checkpoints"],
                     )
@@ -680,6 +689,24 @@ def train_loop(
             wandb.log(epoch_data, step=global_step)
 
         accelerator.wait_for_everyone()
+    
+    # Save final checkpoint before exiting training loop (while FSDP context is still valid)
+    if global_step > 0:
+        final_raw_step = global_step * grad_accum
+        if accelerator.is_main_process:
+            logging.info(f"Saving final checkpoint at end of training...")
+        save_rotating_checkpoint(
+            accelerator=accelerator,
+            model=model,
+            optimizer=optimizer,
+            scheduler=scheduler,
+            epoch=epoch,
+            global_step=final_raw_step,
+            base_dir=output_dir,
+            keep_last_k=train_params_cache["last_k_checkpoints"],
+        )
+        if accelerator.is_main_process:
+            logging.info(f"Saved final checkpoint at step {final_raw_step}")
     
     # Return final epoch, global_step, and best checkpoint info
     return epoch, global_step, best_checkpoint_dir
@@ -860,21 +887,7 @@ def main() -> None:
         start_epoch=start_epoch,
     )
 
-    # Save final checkpoint at training completion
-    if final_step > 0:
-        final_raw_step = final_step * train_params["gradient_accumulation_steps"]
-        save_rotating_checkpoint(
-            accelerator=accelerator,
-            model=model,
-            optimizer=optimizer,
-            scheduler=scheduler,
-            epoch=final_epoch,
-            global_step=final_raw_step,
-            base_dir=output_dir,
-            keep_last_k=train_params["last_k_checkpoints"],
-        )
-        if accelerator.is_main_process:
-            logging.info(f"Saved final checkpoint at step {final_raw_step}")
+    # Final checkpoint is now saved inside the training loop to preserve FSDP context
     
     # Copy best checkpoint to base directory
     if accelerator.is_main_process and best_checkpoint_dir:

@@ -5,6 +5,7 @@ This toolkit evaluates audio and text embedding models on the IEMOCAP and MELD d
 ## Features
 
 - **Multi-modal Support**: Evaluate both audio embeddings (WhiSPA, Whisper, etc.) and text embeddings (Qwen, BERT, etc.)
+- **Offline Embeddings**: Evaluate pre-computed embeddings without loading models
 - **Multi-GPU Support**: Distributed embedding extraction across multiple GPUs using Accelerate
 - **Comprehensive Metrics**: Regression (MSE, MAE, RMSE, R², Pearson/Spearman correlation) and classification (accuracy, F1, ROC-AUC) metrics
 - **GPU Acceleration**: Ridge regression with GPU support for faster evaluation
@@ -28,7 +29,7 @@ conda activate whispa
 
 Evaluate WhiSPA audio embeddings on IEMOCAP:
 ```bash
-python eval/encode/run_evaluation.py \
+python eval/encode/run.py \
     --model_id /mnt/vast/share/checkpoints/rajath-cmd/WhiSPA/Voxtral-Mini-3B \
     --model_type audio \
     --dataset_list iemocap \
@@ -37,7 +38,7 @@ python eval/encode/run_evaluation.py \
 
 Evaluate Qwen text embeddings on MELD:
 ```bash
-python eval/encode/run_evaluation.py \
+python eval/encode/run.py \
     --model_id Qwen/Qwen3-Embedding-0.6B \
     --model_type text \
     --dataset_list meld \
@@ -46,7 +47,7 @@ python eval/encode/run_evaluation.py \
 
 Evaluate on both datasets (default when --dataset_list is not specified):
 ```bash
-python eval/encode/run_evaluation.py \
+python eval/encode/run.py \
     --model_id /mnt/vast/share/checkpoints/rajath-cmd/WhiSPA/Voxtral-Mini-3B \
     --model_type audio \
     --num_workers 32
@@ -58,14 +59,14 @@ python eval/encode/run_evaluation.py \
 
 ```bash
 # Use all available GPUs (auto-detect)
-accelerate launch --multi_gpu eval/encode/run_evaluation.py \
+accelerate launch --multi_gpu eval/encode/run.py \
     --model_id /mnt/vast/share/checkpoints/rajath-cmd/WhiSPA/whispa-enc-3b/step-49410 \
     --model_type audio \
     --batch_size 16 \
     --num_workers 32
 
 # Use specific number of GPUs (e.g., 4 GPUs)
-accelerate launch --num_processes 4 eval/encode/run_evaluation.py \
+accelerate launch --num_processes 4 eval/encode/run.py \
     --model_id /mnt/vast/share/checkpoints/rajath-cmd/WhiSPA/Voxtral-Mini-3B \
     --model_type audio \
     --dataset_list iemocap meld \
@@ -73,7 +74,7 @@ accelerate launch --num_processes 4 eval/encode/run_evaluation.py \
     --num_workers 32
 
 # Use 2 GPUs for Qwen text embeddings  
-accelerate launch --num_processes 2 eval/encode/run_evaluation.py \
+accelerate launch --num_processes 2 eval/encode/run.py \
     --model_id Qwen/Qwen3-Embedding-0.6B \
     --model_type text \
     --dataset_list iemocap meld \
@@ -89,10 +90,59 @@ accelerate launch --num_processes 2 eval/encode/run_evaluation.py \
 4. **Caching**: Embeddings are cached by default; use `--no_cache` to disable
 5. **Mixed Precision**: Use `--dtype float16` for faster processing with minimal quality loss
 
+### Offline Embeddings Evaluation
+
+You can evaluate pre-computed embeddings without loading the model:
+
+#### Single Dataset (Direct .npz file)
+```bash
+python eval/encode/run.py \
+    --embedding_path /path/to/iemocap_embeddings.npz \
+    --dataset_list iemocap
+```
+
+#### Multiple Datasets (Directory)
+```bash
+# Directory structure:
+# embeddings_dir/
+# ├── iemocap.npz  (or iemocap_embeddings.npz)
+# └── meld.npz     (or meld_embeddings.npz)
+
+python eval/encode/run.py \
+    --embedding_path /path/to/embeddings_dir/ \
+    --dataset_list iemocap meld
+```
+
+#### Embedding File Format
+The `.npz` file should contain:
+```python
+{
+    'embeddings': np.ndarray,  # shape: (n_samples, embedding_dim), required
+    'indices': np.ndarray,     # valid sample indices, optional (defaults to all)
+    'n_inputs': int,          # total number of inputs, optional
+}
+```
+
+Example of creating compatible embeddings:
+```python
+import numpy as np
+
+# Your embeddings: (n_samples, embedding_dim)
+embeddings = model.encode(data)  
+
+# Save in compatible format
+np.savez_compressed(
+    'iemocap_embeddings.npz',
+    embeddings=embeddings,
+    indices=np.arange(len(embeddings)),  # All samples valid
+    n_inputs=len(embeddings)
+)
+```
+
 ### Advanced Options
 
 ```bash
-python eval/encode/run_evaluation.py \
+python eval/encode/run.py \
     --model_id /mnt/vast/share/checkpoints/rajath-cmd/WhiSPA/Voxtral-Mini-3B \
     --model_type auto \
     --dataset_list iemocap \
@@ -106,14 +156,14 @@ python eval/encode/run_evaluation.py \
     --random_state 42
 
 # For MELD dataset
-python eval/encode/run_evaluation.py \
+python eval/encode/run.py \
     --model_id /mnt/vast/share/checkpoints/rajath-cmd/WhiSPA/Voxtral-Mini-3B \
     --model_type auto \
     --dataset_list meld \
     --random_state 42
 
 # Evaluate on both datasets
-python eval/encode/run_evaluation.py \
+python eval/encode/run.py \
     --model_id /mnt/vast/share/checkpoints/rajath-cmd/WhiSPA/Voxtral-Mini-3B \
     --model_type auto \
     --dataset_list iemocap meld \
@@ -124,8 +174,9 @@ python eval/encode/run_evaluation.py \
 
 | Argument | Description | Default |
 |----------|-------------|---------|
-| `--model_id` | Model identifier (HuggingFace ID or local path) | Required |
+| `--model_id` | Model identifier (HuggingFace ID or local path) | Required* |
 | `--model_type` | Type of embeddings (auto/audio/text) | auto |
+| `--embedding_path` | Path to pre-computed embeddings (.npz file or directory) | None |
 | `--dataset_list` | List of datasets to evaluate | All (iemocap meld) |
 | `--n_folds` | Number of CV folds | 10 |
 | `--test_size` | Test set proportion | 0.2 |
@@ -138,6 +189,8 @@ python eval/encode/run_evaluation.py \
 | `--no_cache` | Disable caching | False |
 | `--clear_cache` | Clear cache before running | False |
 | `--random_state` | Random seed | 42 |
+
+*Note: Either `--model_id` or `--embedding_path` must be provided.
 
 ## Evaluated Outcomes
 
@@ -199,7 +252,7 @@ This tests:
 ### Example 1: Evaluate WhiSPA on IEMOCAP Emotion Recognition
 
 ```bash
-python eval/encode/run_evaluation.py \
+python eval/encode/run.py \
     --model_id /mnt/vast/home/rajath-cmd/WhiSPA/checkpoints/whispa_best \
     --model_type audio \
     --dataset_list iemocap \
@@ -210,13 +263,13 @@ python eval/encode/run_evaluation.py \
 
 ```bash
 # Evaluate text embeddings on MELD
-python eval/encode/run_evaluation.py \
+python eval/encode/run.py \
     --model_id Qwen/Qwen3-Embedding-0.6B \
     --model_type text \
     --dataset_list meld
 
 # Evaluate audio embeddings on MELD  
-python eval/encode/run_evaluation.py \
+python eval/encode/run.py \
     --model_id mistralai/Voxtral-Mini-3B-2507 \
     --model_type audio \
     --dataset_list meld
@@ -226,21 +279,21 @@ python eval/encode/run_evaluation.py \
 
 ```bash
 # Quick test on IEMOCAP
-python eval/encode/run_evaluation.py \
+python eval/encode/run.py \
     --model_id sentence-transformers/all-MiniLM-L6-v2 \
     --dataset_list iemocap \
     --n_folds 3 \
     --batch_size 64
 
 # Quick test on MELD
-python eval/encode/run_evaluation.py \
+python eval/encode/run.py \
     --model_id sentence-transformers/all-MiniLM-L6-v2 \
     --dataset_list meld \
     --n_folds 3 \
     --batch_size 64
 
 # Evaluate on both datasets
-python eval/encode/run_evaluation.py \
+python eval/encode/run.py \
     --model_id sentence-transformers/all-MiniLM-L6-v2 \
     --dataset_list iemocap meld \
     --n_folds 3
@@ -254,7 +307,7 @@ The toolkit consists of modular components:
 2. **embeddings.py**: Embedding extraction for various models
 3. **evaluator.py**: GPU-accelerated Ridge regression with k-fold CV
 4. **metrics.py**: Metrics computation and report generation
-5. **run_evaluation.py**: Main pipeline orchestrator
+5. **run.py**: Main pipeline orchestrator
 
 ## Notes
 

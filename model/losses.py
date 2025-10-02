@@ -200,21 +200,31 @@ def mmrl_loss(
 
 
 # Trinary Alignment Loss (TAL)
-def trinary_alignment_loss(whispa_embs, audio_embs, text_embs, psych_embs, 𝜏=0.1):
+def trinary_alignment_loss(
+    whispa_embs,
+    audio_embs,
+    text_embs,
+    psych_embs,
+    a=1/3,
+    b=1/3,
+    c=1/3,
+    𝜏=0.1
+):
     """
     Trinary Alignment Loss
     ==============================
-    L_TAL = 0.33 * NCE(Z, A) + 0.33 * NCE(Z, B) + 0.33 * NCE(Z, C)
+    L_TAL = a * NCE(Z, A) + b * NCE(Z, B) + c * NCE(Z, C)
     Z: Whispa embeddings
     A: Audio embeddings
     B: Text embeddings
     C: Psychological embeddings
+    a, b, c: Balancing weights
     ==============================
     """
     acoustic_loss = nce_loss(whispa_embs, audio_embs, 𝜏)
     semantic_loss = nce_loss(whispa_embs, text_embs, 𝜏)
     affective_loss = nce_loss(whispa_embs, psych_embs, 𝜏)
-    total_loss = (acoustic_loss + semantic_loss + affective_loss) / 3
+    total_loss = acoustic_loss * a + semantic_loss * b + affective_loss * c
     return total_loss, acoustic_loss, semantic_loss, affective_loss
 
 

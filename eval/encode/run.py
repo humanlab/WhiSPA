@@ -35,19 +35,9 @@ logger = logging.getLogger(__name__)
 
 
 """
-Example usage:
-
-Single GPU:
-  python eval/encode/run_evaluation.py \
-    --model_id /mnt/vast/share/checkpoints/rajath-cmd/WhiSPA/Voxtral-Mini-3B \
-    --model_type audio \
-    --dataset_list iemocap meld \
-    --batch_size 32 \
-    --num_workers 128
-
 Multi-GPU WhiSPA:
   accelerate launch --num_processes 8 \
-    eval/encode/run_evaluation.py \
+    eval/encode/run.py \
     --model_id /mnt/vast/share/checkpoints/rajath-cmd/WhiSPA/Voxtral-Mini-3B \
     --model_type audio \
     --dataset_list iemocap meld \
@@ -56,7 +46,7 @@ Multi-GPU WhiSPA:
 
 Multi-GPU Qwen:
   accelerate launch --num_processes 8 \
-    eval/encode/run_evaluation.py \
+    eval/encode/run.py \
     --model_id Qwen/Qwen3-Embedding-4B \
     --model_type text \
     --dataset_list iemocap meld \
@@ -71,12 +61,18 @@ def parse_args():
         description="Evaluate embedding models on IEMOCAP and MELD datasets"
     )
     
-    # Model arguments
     parser.add_argument(
         "--model_id",
         type=str,
-        required=True,
-        help="Model identifier (HuggingFace ID or local checkpoint path)"
+        default=None,
+        help="Model identifier (HuggingFace ID or local checkpoint path). Required unless --embedding_path is provided"
+    )
+
+    parser.add_argument(
+        "--embedding_path",
+        type=str,
+        default=None,
+        help="Path to pre-computed embeddings (.npz file or directory containing dataset.npz files)"
     )
     
     parser.add_argument(
@@ -237,6 +233,97 @@ def extract_embeddings(
     return embeddings
 
 
+def load_offline_embeddings(
+    embedding_path: str,
+    dataset_name: str,
+    expected_n_samples: int
+) -> Optional[Tuple[np.ndarray, List[int]]]:
+    """
+    Load pre-computed embeddings from file.
+    
+    Args:
+        embedding_path: Path to .npz file or directory containing dataset embeddings
+        dataset_name: Name of the dataset ('iemocap' or 'meld')
+        expected_n_samples: Expected number of samples in the dataset
+        
+    Returns:
+        Tuple of (embeddings, valid_indices) or None if loading fails
+    """
+    # Determine the file path
+    if os.path.isfile(embedding_path):
+        # Single file provided
+        file_path = embedding_path
+    elif os.path.isdir(embedding_path):
+        # Directory provided, look for dataset-specific file
+        possible_names = [
+            f"{dataset_name}.npz",
+            f"{dataset_name}_embeddings.npz",
+            f"{dataset_name.upper()}.npz",
+            f"{dataset_name.upper()}_embeddings.npz"
+        ]
+        
+        file_path = None
+        for name in possible_names:
+            candidate = os.path.join(embedding_path, name)
+            if os.path.exists(candidate):
+                file_path = candidate
+                break
+        
+        if file_path is None:
+            logger.error(f"No embedding file found for {dataset_name} in {embedding_path}")
+            logger.error(f"Looked for: {', '.join(possible_names)}")
+            return None
+    else:
+        logger.error(f"Embedding path does not exist: {embedding_path}")
+        return None
+    
+    # Load the embeddings
+    logger.info(f"Loading embeddings from: {file_path}")
+    try:
+        data = np.load(file_path)
+        
+        # Extract embeddings
+        if 'embeddings' not in data:
+            logger.error(f"No 'embeddings' array found in {file_path}")
+            return None
+        
+        embeddings = data['embeddings']
+        logger.info(f"Loaded embeddings shape: {embeddings.shape}")
+        
+        # Extract or generate valid indices
+        if 'indices' in data:
+            valid_indices = data['indices'].astype(np.int64).tolist()
+            logger.info(f"Loaded {len(valid_indices)} valid indices")
+        else:
+            # Assume all samples are valid
+            valid_indices = list(range(embeddings.shape[0]))
+            logger.info(f"No indices provided, assuming all {len(valid_indices)} samples are valid")
+        
+        # Validation
+        if 'n_inputs' in data:
+            n_inputs = int(data['n_inputs'])
+            if n_inputs != expected_n_samples:
+                logger.warning(
+                    f"Embedding file has n_inputs={n_inputs} but dataset has {expected_n_samples} samples. "
+                    "This may indicate a dataset version mismatch."
+                )
+        
+        # Validate indices
+        if max(valid_indices) >= expected_n_samples:
+            logger.error(
+                f"Invalid indices: max index {max(valid_indices)} >= dataset size {expected_n_samples}"
+            )
+            return None
+        
+        return embeddings, valid_indices
+        
+    except Exception as e:
+        logger.error(f"Failed to load embeddings from {file_path}: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+
 def evaluate_outcome(
     outcome: str,
     embeddings: np.ndarray,
@@ -299,7 +386,7 @@ def evaluate_single_dataset(
     dataset_name: str,
     args: argparse.Namespace,
     accelerator: Accelerator,
-    extractor: EmbeddingExtractor,
+    extractor: Optional[EmbeddingExtractor],
     model_type: str
 ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     """
@@ -327,30 +414,55 @@ def evaluate_single_dataset(
     if accelerator.is_main_process:
         logger.info(f"Dataset loaded: {dataset}")
     
-    # Extract embeddings
-    if accelerator.is_main_process:
-        logger.info(f"Extracting embeddings for {dataset_name.upper()}...")
-    
-    # All processes participate in embedding extraction
-    result = extract_embeddings(dataset, extractor, model_type)
-    
-    # Synchronize all processes before continuing
-    accelerator.wait_for_everyone()
-    
-    # Only main process continues with evaluation
-    if not accelerator.is_main_process:
-        return None, None  # Other processes return None
-    
-    # Check if embeddings were successfully extracted
-    if result is None:
-        logger.error(f"Failed to extract embeddings for {dataset_name}!")
-        raise RuntimeError(f"Embedding extraction failed for {dataset_name}")
-    
-    embeddings, valid_indices = result
-    logger.info(
-        f"Embeddings shape for {dataset_name}: {embeddings.shape}; "
-        f"valid samples used: {len(valid_indices)}"
-    )
+    # Extract or load embeddings
+    if args.embedding_path:
+        # Load offline embeddings
+        if accelerator.is_main_process:
+            logger.info(f"Loading offline embeddings for {dataset_name.upper()}...")
+            result = load_offline_embeddings(
+                args.embedding_path, 
+                dataset_name, 
+                len(dataset)
+            )
+            
+            # Check if embeddings were successfully loaded
+            if result is None:
+                logger.error(f"Failed to load embeddings for {dataset_name}!")
+                raise RuntimeError(f"Embedding loading failed for {dataset_name}")
+            
+            embeddings, valid_indices = result
+            logger.info(
+                f"Loaded embeddings shape for {dataset_name}: {embeddings.shape}; "
+                f"valid samples used: {len(valid_indices)}"
+            )
+        else:
+            # Other processes don't participate in offline loading
+            return None, None
+    else:
+        # Extract embeddings using model
+        if accelerator.is_main_process:
+            logger.info(f"Extracting embeddings for {dataset_name.upper()}...")
+        
+        # All processes participate in embedding extraction
+        result = extract_embeddings(dataset, extractor, model_type)
+        
+        # Synchronize all processes before continuing
+        accelerator.wait_for_everyone()
+        
+        # Only main process continues with evaluation
+        if not accelerator.is_main_process:
+            return None, None  # Other processes return None
+        
+        # Check if embeddings were successfully extracted
+        if result is None:
+            logger.error(f"Failed to extract embeddings for {dataset_name}!")
+            raise RuntimeError(f"Embedding extraction failed for {dataset_name}")
+        
+        embeddings, valid_indices = result
+        logger.info(
+            f"Embeddings shape for {dataset_name}: {embeddings.shape}; "
+            f"valid samples used: {len(valid_indices)}"
+        )
     
     # Initialize evaluator
     logger.info("Initializing evaluator...")
@@ -412,6 +524,10 @@ def main():
     """Main evaluation pipeline with multi-GPU support."""
     args = parse_args()
     
+    # Validate arguments
+    if args.model_id is None and args.embedding_path is None:
+        raise ValueError("Either --model_id or --embedding_path must be provided")
+    
     # Determine which datasets to evaluate
     if args.dataset_list is not None and len(args.dataset_list) > 0:
         # Use the provided dataset list
@@ -440,7 +556,10 @@ def main():
         logger.info("=" * 60)
         logger.info("EMBEDDING EVALUATION PIPELINE")
         logger.info("=" * 60)
-        logger.info(f"Model: {args.model_id}")
+        if args.embedding_path:
+            logger.info(f"Embeddings: {args.embedding_path} (offline)")
+        else:
+            logger.info(f"Model: {args.model_id}")
         logger.info(f"Datasets: {datasets_to_eval}")
         logger.info(f"Device: {args.device}")
         logger.info(f"Dtype: {args.dtype}")
@@ -449,35 +568,43 @@ def main():
             logger.info(f"Multi-GPU: {accelerator.num_processes} processes")
         logger.info("=" * 60)
     
-    # Determine model type
-    if args.model_type == "auto":
-        model_type = determine_model_type(args.model_id)
+    # Check if using offline embeddings
+    if args.embedding_path:
+        if accelerator.is_main_process:
+            logger.info(f"Using offline embeddings from: {args.embedding_path}")
+            logger.info("Skipping model loading...")
+        extractor = None
+        model_type = "offline"  # Placeholder type for offline embeddings
     else:
-        model_type = args.model_type
-    if accelerator.is_main_process:
-        logger.info(f"Model type: {model_type}")
-    
-    # Initialize embedding extractor (pass the existing accelerator)
-    if accelerator.is_main_process:
-        logger.info("Initializing embedding extractor...")
-    extractor = EmbeddingExtractor(
-        model_id=args.model_id,
-        device=args.device,
-        batch_size=args.batch_size,
-        num_workers=args.num_workers,
-        cache_dir=args.cache_dir,
-        use_cache=not args.no_cache,
-        dtype=dtype,
-        accelerator=accelerator  # Pass the existing accelerator
-    )
-    
-    # Clear cache if requested (only on main process)
-    if args.clear_cache and accelerator.is_main_process:
-        logger.info("Clearing embedding cache...")
-        extractor.clear_cache()
-    
-    # Wait for cache clearing to complete
-    accelerator.wait_for_everyone()
+        # Determine model type
+        if args.model_type == "auto":
+            model_type = determine_model_type(args.model_id)
+        else:
+            model_type = args.model_type
+        if accelerator.is_main_process:
+            logger.info(f"Model type: {model_type}")
+        
+        # Initialize embedding extractor (pass the existing accelerator)
+        if accelerator.is_main_process:
+            logger.info("Initializing embedding extractor...")
+        extractor = EmbeddingExtractor(
+            model_id=args.model_id,
+            device=args.device,
+            batch_size=args.batch_size,
+            num_workers=args.num_workers,
+            cache_dir=args.cache_dir,
+            use_cache=not args.no_cache,
+            dtype=dtype,
+            accelerator=accelerator  # Pass the existing accelerator
+        )
+        
+        # Clear cache if requested (only on main process)
+        if args.clear_cache and accelerator.is_main_process:
+            logger.info("Clearing embedding cache...")
+            extractor.clear_cache()
+        
+        # Wait for cache clearing to complete
+        accelerator.wait_for_everyone()
     
     # Evaluate on each dataset
     all_results = {}
@@ -519,7 +646,7 @@ def main():
             
             results_path = reporter.save_report(
                 results=all_results[dataset_name],
-                model_id=args.model_id,
+                model_id=args.model_id if not args.embedding_path else f"Offline: {args.embedding_path}",
                 dataset_info=all_dataset_info[dataset_name]
             )
         else:
@@ -539,7 +666,7 @@ def main():
             # Save combined report with all results
             results_path = reporter.save_combined_report(
                 all_results=all_results,
-                model_id=args.model_id,
+                model_id=args.model_id if not args.embedding_path else f"Offline: {args.embedding_path}",
                 combined_dataset_info=combined_dataset_info
             )
         
