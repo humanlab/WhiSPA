@@ -14,7 +14,7 @@ train:
   gradient_accumulation_steps: 10
   gradient_clipping: 0.0
   val_ratio: 0.1
-  checkpoint_every_steps: 5
+  checkpoint_every_steps: 100
   validate_every_steps: 500
   last_k_checkpoints: 3
 

@@ -586,14 +586,21 @@ def train_loop(
                             total_step_val += float(vloss.item())
                             n_step_val += 1
                             
-                            # Log component losses per batch (same as training loop)
-                            if accelerator.is_main_process and stage == "train_enc" and isinstance(vout, dict):
+                            # Log validation loss per batch
+                            if accelerator.is_main_process:
                                 log_data = {
-                                    "val/acoustic_loss": vout.get("acoustic_loss", torch.tensor(0.0)).item(),
-                                    "val/semantic_loss": vout.get("semantic_loss", torch.tensor(0.0)).item(),
-                                    "val/affective_loss": vout.get("affective_loss", torch.tensor(0.0)).item(),
+                                    "val/loss": vloss.item(),
                                 }
-                                wandb.log(log_data, step=global_step)
+                                
+                                # Add component losses for train_enc
+                                if stage == "train_enc" and isinstance(vout, dict):
+                                    log_data.update({
+                                        "val/acoustic_loss": vout.get("acoustic_loss", torch.tensor(0.0)).item(),
+                                        "val/semantic_loss": vout.get("semantic_loss", torch.tensor(0.0)).item(),
+                                        "val/affective_loss": vout.get("affective_loss", torch.tensor(0.0)).item(),
+                                    })
+                                
+                                wandb.log(log_data, step=global_step + i)
                             
                             # Accumulate component losses for averaging
                             if stage == "train_enc" and isinstance(vout, dict):
@@ -604,22 +611,22 @@ def train_loop(
                             vbar.update(1)
                         vbar.close()
                     
-                    # Use total validation loss for this validation run
-                    total_val_loss = total_step_val
+                    # Calculate average validation loss for this validation run
+                    avg_val_loss = total_step_val / max(1, n_step_val)
                     model.train()
                     
-                    # Log total validation loss
+                    # Log average validation loss summary
                     if accelerator.is_main_process:
-                        wandb.log({"val/loss": total_val_loss}, step=global_step)
-                        logging.info(f"Step {raw_step}: val_loss={total_val_loss:.4f}")
+                        # Note: Individual batch losses are already logged above
+                        logging.info(f"Step {raw_step}: avg_val_loss={avg_val_loss:.4f} (over {n_step_val} batches)")
                         
-                        # Accumulate validation loss for epoch summary (same pattern as training)
-                        val_running += total_val_loss
+                        # Accumulate validation loss for epoch summary
+                        val_running += avg_val_loss
                         val_count += 1
                         
-                        # Track best validation loss using total loss
-                        if total_val_loss < best_val_loss:
-                            best_val_loss = total_val_loss
+                        # Track best validation loss using average loss
+                        if avg_val_loss < best_val_loss:
+                            best_val_loss = avg_val_loss
                             best_checkpoint_dir = f"step-{raw_step}"
                             logging.info(f"New best validation loss: {best_val_loss:.4f} at step {raw_step}")
                 
@@ -769,6 +776,7 @@ def main() -> None:
         model = WhiSPAModel(whispa_cfg)
         if accelerator.is_main_process:
             logging.info("Created new model from config")
+            logging.info("Loading datasets now...")
     
     model.set_stage(whispa_cfg.stage)
     model.train()
