@@ -34,22 +34,37 @@ def nce_loss(z_a: torch.Tensor, z_b: torch.Tensor, 𝜏: float = 0.1) -> torch.T
         Implemented from the paper:
         "A Simple Framework for Contrastive Learning of Visual Representations" (2020), Chen, et al.
     """
-    combined = torch.cat([z_a, z_b], dim=0)  # shape (2 * batch_size, emb_dims)
-    combined = F.normalize(combined, dim=1)
-
-    # Define positive pairs (each original data with its corresponding augmented data)
     batch_size = z_a.shape[0]
-    pos_pairs = torch.arange(batch_size)
     
-    # Compute cosine similarity for all pairs in the batch
-    similarity_matrix = torch.matmul(combined, combined.T) / 𝜏
-    similarity_matrix = torch.exp(similarity_matrix)
+    # Normalize embeddings
+    z = F.normalize(torch.cat([z_a, z_b], dim=0), dim=1)  # (2N, D)
     
-    pos_sims = similarity_matrix[pos_pairs, pos_pairs + batch_size]
-    neg_sims_sum = similarity_matrix[:batch_size].sum(dim=1) - torch.diag(similarity_matrix[:batch_size])
-    
-    losses = -torch.log(pos_sims / neg_sims_sum)
-    return losses.sum()
+    # Cosine similarity matrix
+    sim = torch.matmul(z, z.T) / 𝜏  # (2N, 2N)
+
+    # Mask self-similarity
+    mask = torch.eye(2 * batch_size, dtype=torch.bool, device=z.device)
+    sim.masked_fill_(mask, float('-inf'))
+
+    # Positive logits: i-th sample in z_a matches (i + N)-th in z_b and vice versa
+    pos_indices = torch.arange(batch_size, device=z.device)
+    pos_logits = torch.cat([
+        sim[pos_indices, pos_indices + batch_size],
+        sim[pos_indices + batch_size, pos_indices]
+    ])
+
+    # Log-sum-exp over each row for denominator
+    logsumexp = torch.logsumexp(sim, dim=1)
+
+    # Select the negative similarities
+    logsumexp_neg = torch.cat([
+        logsumexp[pos_indices],
+        logsumexp[pos_indices + batch_size]
+    ])
+
+    # Final NCE loss
+    losses = -pos_logits + logsumexp_neg
+    return losses.mean()
 
 
 # Matryoshka Representation Learning (MRL)

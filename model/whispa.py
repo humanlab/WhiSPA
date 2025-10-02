@@ -100,10 +100,10 @@ class WhiSPAModel(
         self.voxtral_config = voxtral.config
         
         # Decomposed modules
-        self.spectral_encoder = copy.deepcopy(voxtral.audio_tower).to(dtype=config.dtype, device=config.device)
-        self.multi_modal_projector = copy.deepcopy(voxtral.multi_modal_projector).to(dtype=config.dtype, device=config.device)
-        self.language_model = copy.deepcopy(voxtral.language_model).to(dtype=config.dtype, device=config.device)
-        self.activation = torch.nn.Tanh().to(config.device)
+        self.spectral_encoder = copy.deepcopy(voxtral.audio_tower)
+        self.multi_modal_projector = copy.deepcopy(voxtral.multi_modal_projector)
+        self.language_model = copy.deepcopy(voxtral.language_model)
+        self.activation = torch.nn.Tanh()
 
         del voxtral
 
@@ -202,7 +202,7 @@ class WhiSPAModel(
 
     
     def get_text_embeddings(self, text_input_ids: torch.Tensor, spectral_latent: torch.Tensor):
-        inputs_embs = self.language_model.get_input_embeddings()(text_input_ids)        
+        inputs_embs = self.language_model.get_input_embeddings()(text_input_ids)
         audio_token_mask = text_input_ids == self.voxtral_config.audio_token_id
         inputs_embs[audio_token_mask] = spectral_latent
         return inputs_embs
@@ -276,9 +276,9 @@ class WhiSPAModel(
             assert isinstance(text_attention_mask, torch.Tensor), f"Input: `text_attention_mask` should be a torch.Tensor. This is a required input for stage: {self.config.stage}"
             assert isinstance(text_labels, torch.Tensor), f"Input: `text_labels` should be a torch.Tensor. This is a required input for stage: {self.config.stage}"
             
-            text_input_ids = text_input_ids.to(self.config.device)
-            text_attention_mask = text_attention_mask.to(self.config.device)
-            text_labels = text_labels.to(self.config.device)
+            text_input_ids = text_input_ids.to(self.language_model.device)
+            text_attention_mask = text_attention_mask.to(self.language_model.device)
+            text_labels = text_labels.to(self.language_model.device)
 
             inputs_embs = self.get_text_embeddings(text_input_ids, spectral_latent)
 
@@ -360,8 +360,12 @@ class WhiSPAModel(
         - Writes weights to `model.safetensors` if safe_serialization else `pytorch_model.bin`
         """
         os.makedirs(local_dir, exist_ok=True)
+        
         # Save config
+        device = self.config.device
+        self.config.device = torch.device("cpu")
         self.config.save_pretrained(local_dir)
+        self.config.device = device
         
         # Save weights
         full_state = self.state_dict()
