@@ -39,8 +39,8 @@ from pretrain.whispa_model import WhiSPAModel
 from inference.encode import encode
 
 processor = WhisperProcessor.from_pretrained('openai/whisper-small')
-whisper = WhisperForConditionalGeneration.from_pretrained('openai/whisper-small')
-whispa = WhiSPAModel.from_pretrained('Jarhatz/WhiSPA-V1-Small')
+whisper = WhisperForConditionalGeneration.from_pretrained('openai/whisper-small').to('cuda')
+whispa = WhiSPAModel.from_pretrained('Jarhatz/WhiSPA-V1-Small').to('cuda')
 
 audio_paths = [
       '/path/to/audio/file.wav',
